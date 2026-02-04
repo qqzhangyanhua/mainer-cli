@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.types import WorkerResult
+from src.types import ArgValue, WorkerResult
 from src.workers.base import BaseWorker
 
 
@@ -18,7 +18,7 @@ class MockWorker(BaseWorker):
     def get_capabilities(self) -> list[str]:
         return ["test_action", "another_action"]
 
-    async def execute(self, action: str, args: dict[str, str | int | bool | list[str] | dict[str, str]]) -> WorkerResult:
+    async def execute(self, action: str, args: dict[str, ArgValue]) -> WorkerResult:
         if action == "test_action":
             return WorkerResult(
                 success=True,

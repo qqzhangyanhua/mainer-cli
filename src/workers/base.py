@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from src.types import WorkerResult
+from src.types import ArgValue, WorkerResult
 
 
 class BaseWorker(ABC):
@@ -34,7 +34,7 @@ class BaseWorker(ABC):
     async def execute(
         self,
         action: str,
-        args: dict[str, str | int | bool | list[str] | dict[str, str]],
+        args: dict[str, ArgValue],
     ) -> WorkerResult:
         """执行指定动作
 
