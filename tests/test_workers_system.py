@@ -78,3 +78,34 @@ class TestSystemWorker:
 
         assert result.success is False
         assert "Unknown action" in result.message
+
+    @pytest.mark.asyncio
+    async def test_delete_files(self, tmp_path: Path) -> None:
+        """测试删除文件"""
+        # 创建测试文件
+        file1 = tmp_path / "file1.txt"
+        file1.write_text("test")
+        file2 = tmp_path / "file2.txt"
+        file2.write_text("test")
+
+        worker = SystemWorker()
+        result = await worker.execute(
+            "delete_files",
+            {"files": [str(file1), str(file2)]},
+        )
+
+        assert result.success is True
+        assert not file1.exists()
+        assert not file2.exists()
+
+    @pytest.mark.asyncio
+    async def test_delete_files_nonexistent(self, tmp_path: Path) -> None:
+        """测试删除不存在的文件"""
+        worker = SystemWorker()
+        result = await worker.execute(
+            "delete_files",
+            {"files": [str(tmp_path / "nonexistent.txt")]},
+        )
+
+        assert result.success is False
+        assert "error" in str(result.data)
