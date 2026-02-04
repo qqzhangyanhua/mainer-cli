@@ -1,5 +1,7 @@
 """环境信息收集模块"""
 
+from __future__ import annotations
+
 import os
 import platform
 import subprocess
@@ -58,4 +60,5 @@ class EnvironmentContext:
 - Working Directory: {self.cwd}
 - Docker: {docker_status}
 - User: {self.user}
+- Timestamp: {self.timestamp}
 """
