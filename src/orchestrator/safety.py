@@ -10,11 +10,10 @@ DANGER_PATTERNS: dict[str, list[str]] = {
     "high": [
         "rm -rf",
         "kill -9",
-        "format",
+        "mkfs",          # 磁盘格式化（移除通用的 "format"）
         "dd if=",
         "> /dev/",
-        "mkfs",
-        ":(){:|:&};:",  # Fork bomb
+        ":(){:|:&};:",   # Fork bomb
         "chmod -R 777",
         "chown -R",
         "delete_files",  # SystemWorker 删除文件操作

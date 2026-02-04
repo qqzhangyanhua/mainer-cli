@@ -21,6 +21,7 @@ class PromptBuilder:
         "system": ["list_files", "find_large_files", "check_disk_usage", "delete_files"],
         "container": ["list_containers", "restart_container", "view_logs"],
         "audit": ["log_operation"],
+        "analyze": ["explain"],
     }
 
     def get_worker_capabilities(self) -> str:
@@ -54,26 +55,56 @@ Available Workers:
 {worker_caps}
 
 Worker Details:
-- shell.execute_command: Execute shell commands
+- shell.execute_command: Execute shell commands (⭐ PREFERRED for 95% of ops tasks)
   - ONLY action: "execute_command"
   - Required args: {{"command": "string"}}
   - Optional args: {{"working_dir": "string"}}
+  - CRITICAL: Use FULL commands to show complete information
   - Examples:
     * List files: {{"worker": "shell", "action": "execute_command", "args": {{"command": "ls -la"}}, "risk_level": "safe"}}
     * Check disk: {{"worker": "shell", "action": "execute_command", "args": {{"command": "df -h"}}, "risk_level": "safe"}}
+    * Docker containers (FULL TABLE): {{"worker": "shell", "action": "execute_command", "args": {{"command": "docker ps"}}, "risk_level": "safe"}}
+    * Docker details: {{"worker": "shell", "action": "execute_command", "args": {{"command": "docker inspect container_name"}}, "risk_level": "safe"}}
 
-- system: Advanced file operations (find_large_files, check_disk_usage, delete_files)
-- container: Docker management (list_containers, restart_container, view_logs)
+- chat.respond: Provide analysis and human-readable explanations
+  - args: {{"message": "your detailed analysis"}}
+  - Use this to explain technical output in natural language
 
-IMPORTANT Rules:
-1. For greetings (hello, hi, etc.), respond with: {{"worker": "chat", "action": "respond", "args": {{"message": "your greeting"}}, "risk_level": "safe", "task_completed": true}}
-2. For ops tasks, PREFER shell.execute_command over system worker
-3. ALL args values must be strings, integers, booleans, lists, or dicts - NO nested objects
+- analyze.explain: ⭐ Intelligent analysis of ops objects (PREFERRED for "what is this?" questions)
+  - args: {{"target": "object_name", "type": "docker|process|port|file|systemd"}}
+  - Automatically gathers info and provides Chinese summary
+  - Use when user asks: "是干嘛的", "有什么用", "是什么", "解释", "分析", "explain", "what is"
+  - Example: {{"worker": "analyze", "action": "explain", "args": {{"target": "compoder-mongo", "type": "docker"}}, "risk_level": "safe", "task_completed": true}}
+
+- system/container: Avoid these - use shell commands instead
+
+CRITICAL Rules:
+1. For greetings, use chat.respond immediately
+2. For listing/viewing info (docker services, files, processes):
+   - ALWAYS use FULL commands without --format flags
+   - Show complete tables: "docker ps" NOT "docker ps --format"
+   - Show all columns (ID, image, ports, status, names, etc.)
+   - ONLY use --format if user explicitly asks for specific fields
+3. For analysis questions (含"是干嘛的"、"有什么用"、"是什么"、"解释"、"分析"):
+   - ⭐ PREFERRED: Use analyze.explain - it auto-gathers info and summarizes
+   - Set task_completed: true (analyze worker handles everything)
+   - Example: {{"worker": "analyze", "action": "explain", "args": {{"target": "nginx", "type": "docker"}}, "risk_level": "safe", "task_completed": true}}
 4. Set risk_level: safe (read-only), medium (modifiable), high (destructive)
-5. Output ONLY valid JSON, no extra text
+5. Set task_completed: true when you provide the final answer
+6. Output ONLY valid JSON, no markdown or extra text
+
+Example workflows:
+User: "我有哪些docker服务"
+Step 1: {{"worker": "shell", "action": "execute_command", "args": {{"command": "docker ps"}}, "risk_level": "safe", "task_completed": true}}
+
+User: "这个 docker 是干嘛的" (referring to compoder-mongo from previous output)
+Step 1: {{"worker": "analyze", "action": "explain", "args": {{"target": "compoder-mongo", "type": "docker"}}, "risk_level": "safe", "task_completed": true}}
+
+User: "8080 端口是什么服务"
+Step 1: {{"worker": "analyze", "action": "explain", "args": {{"target": "8080", "type": "port"}}, "risk_level": "safe", "task_completed": true}}
 
 Output format:
-{{"worker": "...", "action": "...", "args": {{...}}, "risk_level": "safe|medium|high", "task_completed": false}}
+{{"worker": "...", "action": "...", "args": {{...}}, "risk_level": "safe|medium|high", "task_completed": true/false}}
 """
 
     def build_user_prompt(
@@ -100,6 +131,14 @@ Output format:
                     f"- Action: {entry.instruction.worker}.{entry.instruction.action}"
                 )
                 parts.append(f"  Result: {entry.result.message}")
+                # 传递完整输出用于 LLM 分析（如果存在）
+                if entry.result.data and isinstance(entry.result.data, dict):
+                    raw_output = entry.result.data.get("raw_output")
+                    if raw_output and isinstance(raw_output, str):
+                        truncated = entry.result.data.get("truncated", False)
+                        truncate_note = " [OUTPUT TRUNCATED]" if truncated else ""
+                        parts.append(f"  Output{truncate_note}:")
+                        parts.append(f"```\n{raw_output}\n```")
             parts.append("")
 
         parts.append(f"User request: {user_input}")

@@ -58,6 +58,66 @@ class TestPromptBuilder:
         assert "check_disk_usage" in prompt
         assert "Disk 90% used" in prompt
 
+    def test_build_user_prompt_with_raw_output(self) -> None:
+        """测试带完整输出的用户提示"""
+        builder = PromptBuilder()
+
+        history = [
+            ConversationEntry(
+                instruction=Instruction(
+                    worker="shell",
+                    action="execute_command",
+                    args={"command": "docker ps"},
+                ),
+                result=WorkerResult(
+                    success=True,
+                    data={
+                        "command": "docker ps",
+                        "raw_output": "CONTAINER ID   IMAGE   STATUS\nabc123   nginx   Up 2 hours",
+                        "truncated": False,
+                    },
+                    message="Command: docker ps",
+                ),
+            )
+        ]
+
+        prompt = builder.build_user_prompt("这是什么", history=history)
+
+        assert "这是什么" in prompt
+        assert "CONTAINER ID" in prompt
+        assert "nginx" in prompt
+        assert "Output:" in prompt
+        assert "[OUTPUT TRUNCATED]" not in prompt
+
+    def test_build_user_prompt_with_truncated_output(self) -> None:
+        """测试带截断标记的用户提示"""
+        builder = PromptBuilder()
+
+        history = [
+            ConversationEntry(
+                instruction=Instruction(
+                    worker="shell",
+                    action="execute_command",
+                    args={"command": "docker inspect test"},
+                ),
+                result=WorkerResult(
+                    success=True,
+                    data={
+                        "command": "docker inspect test",
+                        "raw_output": "{ long json content... }",
+                        "truncated": True,
+                    },
+                    message="Command: docker inspect test",
+                ),
+            )
+        ]
+
+        prompt = builder.build_user_prompt("分析一下", history=history)
+
+        assert "分析一下" in prompt
+        assert "[OUTPUT TRUNCATED]" in prompt
+        assert "long json content" in prompt
+
     def test_get_worker_capabilities(self) -> None:
         """测试获取 Worker 能力描述"""
         builder = PromptBuilder()

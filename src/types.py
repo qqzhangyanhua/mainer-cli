@@ -2,13 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Literal, Union
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
 RiskLevel = Literal["safe", "medium", "high"]
 
 ArgValue = Union[str, int, bool, list[str], dict[str, str]]
+
+# 支持的分析对象类型
+AnalyzeTargetType = Literal[
+    "docker",    # Docker 容器
+    "process",   # 进程
+    "port",      # 端口
+    "file",      # 文件
+    "systemd",   # Systemd 服务
+    "network",   # 网络连接
+]
+
+
+class AnalyzeTarget(BaseModel):
+    """分析对象"""
+
+    type: AnalyzeTargetType = Field(..., description="对象类型")
+    name: str = Field(..., description="对象标识符（容器名、PID、端口号等）")
+    context: Optional[str] = Field(default=None, description="额外上下文信息")
 
 
 class Instruction(BaseModel):
@@ -27,9 +45,11 @@ class WorkerResult(BaseModel):
     """Worker 返回给 Orchestrator 的结果"""
 
     success: bool = Field(..., description="执行是否成功")
-    data: Union[list[dict[str, Union[str, int]]], dict[str, Union[str, int]], None] = Field(
-        default=None, description="结构化结果数据"
-    )
+    data: Union[
+        list[dict[str, Union[str, int]]],
+        dict[str, Union[str, int, bool]],  # 支持 bool 用于 truncated 标记
+        None,
+    ] = Field(default=None, description="结构化结果数据")
     message: str = Field(..., description="人类可读描述")
     task_completed: bool = Field(default=False, description="任务是否完成")
     simulated: bool = Field(default=False, description="是否为模拟执行结果")

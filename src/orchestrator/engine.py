@@ -75,6 +75,13 @@ class OrchestratorEngine:
         except ImportError:
             pass
 
+        # 注册 AnalyzeWorker（需要 LLM 客户端）
+        try:
+            from src.workers.analyze import AnalyzeWorker
+            self._workers["analyze"] = AnalyzeWorker(self._llm_client)
+        except ImportError:
+            pass
+
     def get_worker(self, name: str) -> Optional[BaseWorker]:
         """获取 Worker
 

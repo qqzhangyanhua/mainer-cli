@@ -22,8 +22,10 @@ app = typer.Typer(
 )
 config_app = typer.Typer(help="配置管理命令")
 template_app = typer.Typer(help="任务模板管理命令")
+cache_app = typer.Typer(help="缓存管理命令")
 app.add_typer(config_app, name="config")
 app.add_typer(template_app, name="template")
+app.add_typer(cache_app, name="cache")
 
 console = Console()
 
@@ -226,6 +228,124 @@ def template_run(
     except Exception as e:
         console.print(Panel(f"Error: {e!s}", title="Error", border_style="red"))
         raise typer.Exit(1)
+
+
+@cache_app.command("list")
+def cache_list() -> None:
+    """列出所有缓存的分析模板"""
+    from rich.table import Table
+
+    from src.workers.cache import AnalyzeTemplateCache
+
+    cache = AnalyzeTemplateCache()
+    templates = cache.list_all()
+
+    if not templates:
+        console.print("[dim]No cached templates[/dim]")
+        return
+
+    table = Table(title="Cached Analyze Templates")
+    table.add_column("Type", style="cyan")
+    table.add_column("Hit Count", style="magenta", justify="right")
+    table.add_column("Created At", style="green")
+    table.add_column("Commands", style="yellow")
+
+    for name, template in templates.items():
+        # 格式化命令列表（截断过长的命令）
+        commands_str = ", ".join(
+            cmd[:30] + "..." if len(cmd) > 30 else cmd
+            for cmd in template.commands[:3]
+        )
+        if len(template.commands) > 3:
+            commands_str += f" (+{len(template.commands) - 3} more)"
+
+        table.add_row(
+            name,
+            str(template.hit_count),
+            template.created_at[:19],  # 截取日期部分
+            commands_str,
+        )
+
+    console.print(table)
+
+
+@cache_app.command("show")
+def cache_show(
+    target_type: str = typer.Argument(..., help="对象类型（如 docker, process, port）"),
+) -> None:
+    """显示指定类型的缓存模板详情"""
+    from src.workers.cache import AnalyzeTemplateCache
+
+    cache = AnalyzeTemplateCache()
+    templates = cache.list_all()
+
+    if target_type not in templates:
+        console.print(f"[red]Cache not found for type: {target_type}[/red]")
+        raise typer.Exit(1)
+
+    template = templates[target_type]
+
+    console.print(Panel(
+        f"[bold]Type:[/bold] {target_type}\n"
+        f"[bold]Hit Count:[/bold] {template.hit_count}\n"
+        f"[bold]Created At:[/bold] {template.created_at}\n\n"
+        f"[bold]Commands:[/bold]\n" +
+        "\n".join(f"  - {cmd}" for cmd in template.commands),
+        title=f"Cache: {target_type}",
+        border_style="blue",
+    ))
+
+
+@cache_app.command("clear")
+def cache_clear(
+    target_type: Optional[str] = typer.Argument(
+        None,
+        help="要清除的对象类型，不指定则清除全部",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="不询问确认直接清除",
+    ),
+) -> None:
+    """清除缓存的分析模板
+
+    示例:
+        opsai cache clear           # 清除所有缓存
+        opsai cache clear docker    # 只清除 docker 类型的缓存
+        opsai cache clear -f        # 强制清除，不询问
+    """
+    from src.workers.cache import AnalyzeTemplateCache
+
+    cache = AnalyzeTemplateCache()
+
+    # 确认清除
+    if not force:
+        if target_type:
+            if not cache.exists(target_type):
+                console.print(f"[yellow]No cache found for type: {target_type}[/yellow]")
+                return
+            confirm_msg = f"Clear cache for type '{target_type}'?"
+        else:
+            templates = cache.list_all()
+            if not templates:
+                console.print("[dim]No cached templates to clear[/dim]")
+                return
+            confirm_msg = f"Clear ALL cached templates ({len(templates)} items)?"
+
+        confirmed = typer.confirm(confirm_msg)
+        if not confirmed:
+            console.print("[yellow]Cancelled[/yellow]")
+            return
+
+    # 执行清除
+    count = cache.clear(target_type)
+
+    if target_type:
+        console.print(f"[green]✓[/green] Cleared cache for: {target_type}")
+    else:
+        console.print(f"[green]✓[/green] Cleared all cache ({count} items)")
 
 
 if __name__ == "__main__":

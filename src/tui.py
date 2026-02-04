@@ -111,21 +111,14 @@ class OpsAIApp(App[str]):
         """进度回调：实时显示执行步骤"""
         history = self.query_one("#history", RichLog)
 
-        # 特殊处理：如果是命令输出，使用代码块格式
-        if step == "result" and "Output:" in message:
-            # 提取命令和输出
-            lines = message.split("\n")
-            for line in lines:
-                if line.startswith("Command:"):
-                    history.write(f"[cyan]$ {line.replace('Command: ', '')}[/cyan]")
-                elif line.startswith("Output:"):
-                    history.write("[dim]Output:[/dim]")
-                elif line.startswith("Exit code:"):
-                    continue  # 跳过退出码，成功与否由 emoji 表示
-                else:
-                    # 原始命令输出
-                    history.write(line)
+        # 只显示过程信息，不显示最终结果（避免重复）
+        if step == "result":
+            # 只显示执行状态（✅/❌），不显示完整输出
+            if message.startswith("✅") or message.startswith("❌"):
+                status_line = message.split("\n")[0]  # 只取第一行状态
+                history.write(f"[dim]{status_line}[/dim]")
         else:
+            # 其他步骤正常显示
             history.write(f"[dim]{message}[/dim]")
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -145,7 +138,33 @@ class OpsAIApp(App[str]):
 
         try:
             result = await self._engine.react_loop(user_input)
-            history.write(f"\n[bold green]Assistant:[/bold green] {result}")
+
+            # 如果结果包含命令输出，格式化显示
+            if "Command:" in result and "Output:" in result:
+                lines = result.split("\n")
+                history.write("")  # 空行分隔
+
+                # 标记是否已显示命令
+                command_shown = False
+
+                for line in lines:
+                    if line.startswith("Command:"):
+                        # 只显示一次命令行
+                        if not command_shown:
+                            cmd = line.replace("Command: ", "")
+                            history.write(f"[cyan]$ {cmd}[/cyan]")
+                            command_shown = True
+                    elif line.startswith("Output:"):
+                        continue  # 跳过 "Output:" 标题
+                    elif line.startswith("Error:"):
+                        continue  # Error 信息会单独处理
+                    elif line.startswith("Exit code:"):
+                        continue  # 跳过退出码
+                    elif line.strip() and not line.startswith("$ "):  # 非空行且不是重复的命令
+                        history.write(line)
+            else:
+                # 非命令输出，直接显示（如聊天回复、分析结果等）
+                history.write(f"\n[bold green]Assistant:[/bold green] {result}")
         except Exception as e:
             history.write(f"[bold red]Error:[/bold red] {e!s}")
 

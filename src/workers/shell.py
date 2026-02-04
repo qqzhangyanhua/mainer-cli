@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Union, cast
+from typing import Tuple, Union, cast
 
 from src.types import ArgValue, WorkerResult
 from src.workers.base import BaseWorker
+
+# 输出截断常量
+MAX_OUTPUT_LENGTH = 4000
+TRUNCATE_HEAD = 2000
+TRUNCATE_TAIL = 2000
 
 
 class ShellWorker(BaseWorker):
@@ -23,6 +28,28 @@ class ShellWorker(BaseWorker):
 
     def get_capabilities(self) -> list[str]:
         return ["execute_command"]
+
+    def _truncate_output(self, output: str) -> Tuple[str, bool]:
+        """截断过长输出，保留头尾部分
+
+        Args:
+            output: 原始输出
+
+        Returns:
+            (截断后输出, 是否被截断)
+        """
+        if len(output) <= MAX_OUTPUT_LENGTH:
+            return output, False
+
+        truncated_chars = len(output) - TRUNCATE_HEAD - TRUNCATE_TAIL
+        head = output[:TRUNCATE_HEAD]
+        tail = output[-TRUNCATE_TAIL:]
+        truncated_output = (
+            f"{head}\n\n"
+            f"... [truncated {truncated_chars} characters] ...\n\n"
+            f"{tail}"
+        )
+        return truncated_output, True
 
     async def execute(
         self,
@@ -78,6 +105,9 @@ class ShellWorker(BaseWorker):
             exit_code = process.returncode or 0
             success = exit_code == 0
 
+            # 截断过长输出用于 LLM 上下文传递
+            raw_output, truncated = self._truncate_output(stdout)
+
             # 构建结果消息
             message_parts = [f"Command: {command}"]
             if stdout:
@@ -89,12 +119,14 @@ class ShellWorker(BaseWorker):
             return WorkerResult(
                 success=success,
                 data=cast(
-                    dict[str, Union[str, int]],
+                    dict[str, Union[str, int, bool]],
                     {
                         "command": command,
                         "stdout": stdout,
                         "stderr": stderr,
                         "exit_code": exit_code,
+                        "raw_output": raw_output,  # 用于 LLM 上下文传递
+                        "truncated": truncated,    # 标记是否被截断
                     },
                 ),
                 message="\n".join(message_parts),

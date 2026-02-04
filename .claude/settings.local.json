@@ -3,7 +3,8 @@
     "allow": [
       "Bash(uv run:*)",
       "Bash(uv sync:*)",
-      "Bash(uv pip:*)"
+      "Bash(uv pip:*)",
+      "mcp__augment-context-engine__codebase-retrieval"
     ]
   }
 }
