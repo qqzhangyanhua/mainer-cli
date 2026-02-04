@@ -72,3 +72,11 @@ class TestAuditWorker:
         assert len(lines) == 2
         assert "first" in lines[0]
         assert "second" in lines[1]
+
+    @pytest.mark.asyncio
+    async def test_unknown_action(self) -> None:
+        """测试未知动作"""
+        worker = AuditWorker()
+        result = await worker.execute("unknown_action", {})
+        assert result.success is False
+        assert "Unknown action" in result.message
