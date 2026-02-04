@@ -40,13 +40,17 @@ target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "ANN", "B", "C4", "SIM"]
-ignore = ["ANN101", "ANN102"]
+ignore = ["UP007"]  # Keep Union syntax for Python 3.9 compatibility
 
 [tool.mypy]
 python_version = "3.9"
 strict = true
 disallow_any_explicit = true
 plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
