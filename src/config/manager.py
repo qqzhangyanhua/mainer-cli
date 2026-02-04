@@ -1,10 +1,14 @@
 """配置文件管理模块"""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+
+from src.types import RiskLevel
 
 
 class LLMConfig(BaseModel):
@@ -21,8 +25,8 @@ class SafetyConfig(BaseModel):
     """安全配置"""
 
     auto_approve_safe: bool = Field(default=True, description="自动批准安全操作")
-    cli_max_risk: str = Field(default="safe", description="CLI 模式最大风险等级")
-    tui_max_risk: str = Field(default="high", description="TUI 模式最大风险等级")
+    cli_max_risk: RiskLevel = Field(default="safe", description="CLI 模式最大风险等级")
+    tui_max_risk: RiskLevel = Field(default="high", description="TUI 模式最大风险等级")
 
 
 class AuditConfig(BaseModel):
@@ -63,6 +67,10 @@ class ConfigManager:
 
         Returns:
             OpsAIConfig: 配置对象
+
+        Raises:
+            ValueError: 配置文件格式错误或验证失败
+            OSError: 文件读取错误
         """
         config_path = self.get_config_path()
 
@@ -71,18 +79,36 @@ class ConfigManager:
             self.save(config)
             return config
 
-        with open(config_path, encoding="utf-8") as f:
-            data = json.load(f)
-        return OpsAIConfig.model_validate(data)
+        try:
+            with open(config_path, encoding="utf-8") as f:
+                data = json.load(f)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"配置文件格式错误: {config_path} - {e}") from e
+        except OSError as e:
+            raise OSError(f"无法读取配置文件: {config_path} - {e}") from e
+
+        try:
+            return OpsAIConfig.model_validate(data)
+        except ValidationError as e:
+            raise ValueError(f"配置文件验证失败: {config_path} - {e}") from e
 
     def save(self, config: OpsAIConfig) -> None:
         """保存配置到文件
 
         Args:
             config: 配置对象
+
+        Raises:
+            OSError: 文件写入错误
         """
         config_path = self.get_config_path()
-        config_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise OSError(f"无法创建配置目录: {config_path.parent} - {e}") from e
 
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.write(config.model_dump_json(indent=2))
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                f.write(config.model_dump_json(indent=2))
+        except OSError as e:
+            raise OSError(f"无法写入配置文件: {config_path} - {e}") from e

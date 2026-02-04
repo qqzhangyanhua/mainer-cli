@@ -1,6 +1,5 @@
 """配置管理模块测试"""
 
-import json
 from pathlib import Path
 
 import pytest
