@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Union, cast
 
 from src.types import ArgValue, WorkerResult
 from src.workers.base import BaseWorker
@@ -93,7 +94,7 @@ class SystemWorker(BaseWorker):
                     continue
 
         # 按大小降序排序
-        large_files.sort(key=lambda x: x.get("size_mb", 0), reverse=True)
+        large_files.sort(key=lambda x: x["size_mb"], reverse=True)
 
         return WorkerResult(
             success=True,
@@ -112,7 +113,7 @@ class SystemWorker(BaseWorker):
 
         try:
             usage = shutil.disk_usage(path_str)
-            data: dict[str, str | int] = {
+            data: dict[str, int] = {
                 "total": usage.total // (1024 * 1024 * 1024),  # GB
                 "used": usage.used // (1024 * 1024 * 1024),
                 "free": usage.free // (1024 * 1024 * 1024),
@@ -120,7 +121,7 @@ class SystemWorker(BaseWorker):
             }
             return WorkerResult(
                 success=True,
-                data=data,
+                data=cast(dict[str, Union[str, int]], data),
                 message=f"Disk usage: {data['percent_used']}% used",
             )
         except OSError as e:
@@ -138,6 +139,9 @@ class SystemWorker(BaseWorker):
         files = args.get("files", [])
         if not isinstance(files, list):
             return WorkerResult(success=False, message="files must be a list")
+        
+        if len(files) == 0:
+            return WorkerResult(success=False, message="files list cannot be empty")
 
         deleted: list[str] = []
         errors: list[str] = []
@@ -167,7 +171,7 @@ class SystemWorker(BaseWorker):
             message_parts.append(f"{len(errors)} errors")
 
         # 构建符合类型要求的数据结构
-        result_data: list[dict[str, str | int]] = []
+        result_data: list[dict[str, str]] = []
         for deleted_path in deleted:
             result_data.append({"type": "deleted", "path": deleted_path})
         for error_msg in errors:
@@ -175,7 +179,7 @@ class SystemWorker(BaseWorker):
 
         return WorkerResult(
             success=success,
-            data=result_data,
+            data=cast(list[dict[str, Union[str, int]]], result_data),
             message=", ".join(message_parts) if message_parts else "No files to delete",
             task_completed=success,
         )
