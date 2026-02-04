@@ -3,7 +3,7 @@
 import os
 import platform
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -14,15 +14,15 @@ class EnvironmentContext:
     在启动时收集一次，会话期间不再更新
     """
 
-    os_type: str
-    os_version: str
-    shell: str
-    cwd: str
-    user: str
-    docker_available: bool
-    timestamp: str
+    os_type: str = field(init=False)
+    os_version: str = field(init=False)
+    shell: str = field(init=False)
+    cwd: str = field(init=False)
+    user: str = field(init=False)
+    docker_available: bool = field(init=False)
+    timestamp: str = field(init=False)
 
-    def __init__(self) -> None:
+    def __post_init__(self) -> None:
         """初始化并收集环境信息"""
         self.os_type = platform.system()
         self.os_version = platform.release()
