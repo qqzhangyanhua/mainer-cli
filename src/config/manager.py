@@ -27,6 +27,8 @@ class SafetyConfig(BaseModel):
     auto_approve_safe: bool = Field(default=True, description="自动批准安全操作")
     cli_max_risk: RiskLevel = Field(default="safe", description="CLI 模式最大风险等级")
     tui_max_risk: RiskLevel = Field(default="high", description="TUI 模式最大风险等级")
+    dry_run_by_default: bool = Field(default=False, description="默认启用 dry-run 模式")
+    require_dry_run_for_high_risk: bool = Field(default=True, description="高风险操作强制先 dry-run")
 
 
 class AuditConfig(BaseModel):

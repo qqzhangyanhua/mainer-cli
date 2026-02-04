@@ -1,4 +1,4 @@
-"""LLM 客户端封装 - 基于 LiteLLM"""
+"""LLM 客户端封装 - 基于 OpenAI SDK"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import re
 from typing import Optional
 
-from litellm import acompletion
+from openai import AsyncOpenAI
 
 from src.config.manager import LLMConfig
 
@@ -14,7 +14,8 @@ from src.config.manager import LLMConfig
 class LLMClient:
     """LLM 客户端
 
-    封装 LiteLLM，提供统一的 LLM 调用接口
+    封装 OpenAI SDK，提供统一的 LLM 调用接口
+    直接使用 OpenAI 标准 API 格式 (/v1/chat/completions)
     """
 
     def __init__(self, config: LLMConfig) -> None:
@@ -24,6 +25,11 @@ class LLMClient:
             config: LLM 配置
         """
         self._config = config
+        self._client = AsyncOpenAI(
+            base_url=config.base_url,
+            api_key=config.api_key or "dummy-key",  # 某些兼容 API 不需要 key
+            timeout=float(config.timeout),
+        )
 
     @property
     def model(self) -> str:
@@ -65,12 +71,9 @@ class LLMClient:
         """
         messages = self.build_messages(system_prompt, user_prompt)
 
-        response = await acompletion(
+        response = await self._client.chat.completions.create(
             model=self._config.model,
-            messages=messages,
-            api_base=self._config.base_url,
-            api_key=self._config.api_key or None,
-            timeout=self._config.timeout,
+            messages=messages,  # type: ignore
             max_tokens=self._config.max_tokens,
         )
 

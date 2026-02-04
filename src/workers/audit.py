@@ -52,6 +52,11 @@ class AuditWorker(BaseWorker):
         args: dict[str, ArgValue],
     ) -> WorkerResult:
         """记录操作到审计日志"""
+        # 检查 dry_run 模式
+        dry_run = args.get("dry_run", False)
+        if isinstance(dry_run, str):
+            dry_run = dry_run.lower() == "true"
+
         # 提取参数
         user_input = str(args.get("input", ""))
         worker = str(args.get("worker", "unknown"))
@@ -60,6 +65,14 @@ class AuditWorker(BaseWorker):
         confirmed = str(args.get("confirmed", "unknown"))
         exit_code = args.get("exit_code", -1)
         output = str(args.get("output", ""))[:100]  # 截取前100字符
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would log: {worker}.{action} (risk: {risk})",
+                simulated=True,
+                task_completed=True,
+            )
 
         # 格式化日志行
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

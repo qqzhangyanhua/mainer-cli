@@ -17,6 +17,7 @@ DANGER_PATTERNS: dict[str, list[str]] = {
         ":(){:|:&};:",  # Fork bomb
         "chmod -R 777",
         "chown -R",
+        "delete_files",  # SystemWorker 删除文件操作
     ],
     "medium": [
         "rm ",
@@ -27,6 +28,8 @@ DANGER_PATTERNS: dict[str, list[str]] = {
         "systemctl restart",
         "reboot",
         "shutdown",
+        "restart",  # 容器重启
+        "stop",     # 容器停止
     ],
 }
 

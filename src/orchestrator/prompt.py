@@ -16,7 +16,9 @@ class PromptBuilder:
 
     # Worker 能力描述
     WORKER_CAPABILITIES: dict[str, list[str]] = {
-        "system": ["find_large_files", "check_disk_usage", "delete_files"],
+        "chat": ["respond"],
+        "shell": ["execute_command"],
+        "system": ["list_files", "find_large_files", "check_disk_usage", "delete_files"],
         "container": ["list_containers", "restart_container", "view_logs"],
         "audit": ["log_operation"],
     }
@@ -51,14 +53,27 @@ class PromptBuilder:
 Available Workers:
 {worker_caps}
 
-Output format:
-{{"worker": "...", "action": "...", "args": {{...}}, "risk_level": "safe|medium|high"}}
+Worker Details:
+- shell.execute_command: Execute shell commands
+  - ONLY action: "execute_command"
+  - Required args: {{"command": "string"}}
+  - Optional args: {{"working_dir": "string"}}
+  - Examples:
+    * List files: {{"worker": "shell", "action": "execute_command", "args": {{"command": "ls -la"}}, "risk_level": "safe"}}
+    * Check disk: {{"worker": "shell", "action": "execute_command", "args": {{"command": "df -h"}}, "risk_level": "safe"}}
 
-Rules:
-1. Always output valid JSON
-2. Set risk_level based on operation danger: safe (read-only), medium (modifiable), high (destructive)
-3. For multi-step tasks, complete one step at a time
-4. Set task_completed: true in your response when the user's goal is achieved
+- system: Advanced file operations (find_large_files, check_disk_usage, delete_files)
+- container: Docker management (list_containers, restart_container, view_logs)
+
+IMPORTANT Rules:
+1. For greetings (hello, hi, etc.), respond with: {{"worker": "chat", "action": "respond", "args": {{"message": "your greeting"}}, "risk_level": "safe", "task_completed": true}}
+2. For ops tasks, PREFER shell.execute_command over system worker
+3. ALL args values must be strings, integers, booleans, lists, or dicts - NO nested objects
+4. Set risk_level: safe (read-only), medium (modifiable), high (destructive)
+5. Output ONLY valid JSON, no extra text
+
+Output format:
+{{"worker": "...", "action": "...", "args": {{...}}, "risk_level": "safe|medium|high", "task_completed": false}}
 """
 
     def build_user_prompt(

@@ -8,7 +8,7 @@ license = { text = "MIT" }
 dependencies = [
     "textual>=0.47.0",
     "typer>=0.9.0",
-    "litellm>=1.0.0",
+    "openai>=1.0.0",
     "pydantic>=2.0.0",
     "docker>=7.0.0",
     "rich>=13.0.0",

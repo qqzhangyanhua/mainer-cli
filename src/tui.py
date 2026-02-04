@@ -88,6 +88,7 @@ class OpsAIApp(App[str]):
         self._engine = OrchestratorEngine(
             self._config,
             confirmation_callback=self._request_confirmation,
+            progress_callback=self._on_progress,
         )
         self._pending_confirmation: bool | None = None
 
@@ -106,6 +107,27 @@ class OpsAIApp(App[str]):
         # 暂时返回 True，后续实现完整的确认流程
         return True
 
+    def _on_progress(self, step: str, message: str) -> None:
+        """进度回调：实时显示执行步骤"""
+        history = self.query_one("#history", RichLog)
+
+        # 特殊处理：如果是命令输出，使用代码块格式
+        if step == "result" and "Output:" in message:
+            # 提取命令和输出
+            lines = message.split("\n")
+            for line in lines:
+                if line.startswith("Command:"):
+                    history.write(f"[cyan]$ {line.replace('Command: ', '')}[/cyan]")
+                elif line.startswith("Output:"):
+                    history.write("[dim]Output:[/dim]")
+                elif line.startswith("Exit code:"):
+                    continue  # 跳过退出码，成功与否由 emoji 表示
+                else:
+                    # 原始命令输出
+                    history.write(line)
+        else:
+            history.write(f"[dim]{message}[/dim]")
+
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """处理输入提交"""
         user_input = event.value.strip()
@@ -120,11 +142,10 @@ class OpsAIApp(App[str]):
 
         # 显示用户输入
         history.write(f"[bold cyan]You:[/bold cyan] {user_input}")
-        history.write("[dim]Processing...[/dim]")
 
         try:
             result = await self._engine.react_loop(user_input)
-            history.write(f"[bold green]Assistant:[/bold green] {result}")
+            history.write(f"\n[bold green]Assistant:[/bold green] {result}")
         except Exception as e:
             history.write(f"[bold red]Error:[/bold red] {e!s}")
 

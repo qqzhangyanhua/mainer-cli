@@ -1,0 +1,380 @@
+"""容器操作 Worker - Docker 管理"""
+
+from __future__ import annotations
+
+from typing import cast
+
+try:
+    import docker
+    from docker.errors import DockerException, NotFound
+    DOCKER_AVAILABLE = True
+except ImportError:
+    DOCKER_AVAILABLE = False
+
+from src.types import ArgValue, WorkerResult
+from src.workers.base import BaseWorker
+
+
+class ContainerWorker(BaseWorker):
+    """Docker 容器管理 Worker
+
+    支持的操作:
+    - list_containers: 列出容器
+    - inspect_container: 查看容器详情
+    - logs: 获取容器日志
+    - restart: 重启容器
+    - stop: 停止容器
+    - start: 启动容器
+    - stats: 获取资源统计
+    """
+
+    def __init__(self) -> None:
+        """初始化 Container Worker"""
+        self._client = None
+        if DOCKER_AVAILABLE:
+            try:
+                self._client = docker.from_env()
+            except DockerException:
+                pass
+
+    @property
+    def name(self) -> str:
+        return "container"
+
+    def get_capabilities(self) -> list[str]:
+        return [
+            "list_containers",
+            "inspect_container",
+            "logs",
+            "restart",
+            "stop",
+            "start",
+            "stats",
+        ]
+
+    async def execute(
+        self,
+        action: str,
+        args: dict[str, ArgValue],
+    ) -> WorkerResult:
+        """执行容器操作"""
+        # 检查 dry_run 模式（在检查 Docker 可用性之前）
+        dry_run = args.get("dry_run", False)
+        if isinstance(dry_run, str):
+            dry_run = dry_run.lower() == "true"
+
+        handlers = {
+            "list_containers": self._list_containers,
+            "inspect_container": self._inspect_container,
+            "logs": self._logs,
+            "restart": self._restart,
+            "stop": self._stop,
+            "start": self._start,
+            "stats": self._stats,
+        }
+
+        handler = handlers.get(action)
+        if handler is None:
+            return WorkerResult(
+                success=False,
+                message=f"Unknown action: {action}",
+            )
+
+        if not DOCKER_AVAILABLE:
+            return WorkerResult(
+                success=False,
+                message="Docker library not installed. Run: pip install docker",
+            )
+
+        if self._client is None and not dry_run:
+            return WorkerResult(
+                success=False,
+                message="Cannot connect to Docker daemon. Is Docker running?",
+            )
+
+        try:
+            return await handler(args, dry_run=dry_run)
+        except Exception as e:
+            return WorkerResult(
+                success=False,
+                message=f"Error executing {action}: {e!s}",
+            )
+
+    async def _list_containers(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """列出容器"""
+        all_containers = args.get("all", False)
+        if isinstance(all_containers, str):
+            all_containers = all_containers.lower() == "true"
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would list containers (all={all_containers})",
+                simulated=True,
+            )
+
+        if self._client is None:
+            return WorkerResult(success=False, message="Docker client not available")
+
+        containers = self._client.containers.list(all=all_containers)
+        data: list[dict[str, str | int]] = []
+
+        for container in containers:
+            data.append({
+                "id": container.short_id,
+                "name": container.name,
+                "status": container.status,
+                "image": container.image.tags[0] if container.image.tags else "unknown",
+            })
+
+        return WorkerResult(
+            success=True,
+            data=data,
+            message=f"Found {len(data)} containers",
+            task_completed=True,
+        )
+
+    async def _inspect_container(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """查看容器详情"""
+        container_id = args.get("container_id")
+        if not isinstance(container_id, str):
+            return WorkerResult(success=False, message="container_id must be a string")
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would inspect container: {container_id}",
+                simulated=True,
+            )
+
+        if self._client is None:
+            return WorkerResult(success=False, message="Docker client not available")
+
+        try:
+            container = self._client.containers.get(container_id)
+            attrs = container.attrs
+
+            data: dict[str, str | int] = {
+                "id": container.short_id,
+                "name": container.name,
+                "status": container.status,
+                "image": attrs["Config"]["Image"],
+                "created": attrs["Created"],
+                "restart_count": attrs["RestartCount"],
+            }
+
+            return WorkerResult(
+                success=True,
+                data=cast(dict[str, str | int], data),
+                message=f"Container {container_id} status: {container.status}",
+                task_completed=True,
+            )
+        except NotFound:
+            return WorkerResult(
+                success=False,
+                message=f"Container not found: {container_id}",
+            )
+
+    async def _logs(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """获取容器日志"""
+        container_id = args.get("container_id")
+        if not isinstance(container_id, str):
+            return WorkerResult(success=False, message="container_id must be a string")
+
+        tail = args.get("tail", 100)
+        if not isinstance(tail, int):
+            return WorkerResult(success=False, message="tail must be an integer")
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would fetch logs from {container_id} (tail={tail})",
+                simulated=True,
+            )
+
+        if self._client is None:
+            return WorkerResult(success=False, message="Docker client not available")
+
+        try:
+            container = self._client.containers.get(container_id)
+            logs = container.logs(tail=tail, timestamps=True).decode("utf-8")
+
+            return WorkerResult(
+                success=True,
+                data={"logs": logs},
+                message=f"Retrieved {tail} lines from {container_id}",
+                task_completed=True,
+            )
+        except NotFound:
+            return WorkerResult(
+                success=False,
+                message=f"Container not found: {container_id}",
+            )
+
+    async def _restart(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """重启容器"""
+        container_id = args.get("container_id")
+        if not isinstance(container_id, str):
+            return WorkerResult(success=False, message="container_id must be a string")
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would restart container: {container_id}",
+                simulated=True,
+            )
+
+        if self._client is None:
+            return WorkerResult(success=False, message="Docker client not available")
+
+        try:
+            container = self._client.containers.get(container_id)
+            container.restart()
+
+            return WorkerResult(
+                success=True,
+                message=f"Container {container_id} restarted successfully",
+                task_completed=True,
+            )
+        except NotFound:
+            return WorkerResult(
+                success=False,
+                message=f"Container not found: {container_id}",
+            )
+
+    async def _stop(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """停止容器"""
+        container_id = args.get("container_id")
+        if not isinstance(container_id, str):
+            return WorkerResult(success=False, message="container_id must be a string")
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would stop container: {container_id}",
+                simulated=True,
+            )
+
+        if self._client is None:
+            return WorkerResult(success=False, message="Docker client not available")
+
+        try:
+            container = self._client.containers.get(container_id)
+            container.stop()
+
+            return WorkerResult(
+                success=True,
+                message=f"Container {container_id} stopped successfully",
+                task_completed=True,
+            )
+        except NotFound:
+            return WorkerResult(
+                success=False,
+                message=f"Container not found: {container_id}",
+            )
+
+    async def _start(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """启动容器"""
+        container_id = args.get("container_id")
+        if not isinstance(container_id, str):
+            return WorkerResult(success=False, message="container_id must be a string")
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would start container: {container_id}",
+                simulated=True,
+            )
+
+        if self._client is None:
+            return WorkerResult(success=False, message="Docker client not available")
+
+        try:
+            container = self._client.containers.get(container_id)
+            container.start()
+
+            return WorkerResult(
+                success=True,
+                message=f"Container {container_id} started successfully",
+                task_completed=True,
+            )
+        except NotFound:
+            return WorkerResult(
+                success=False,
+                message=f"Container not found: {container_id}",
+            )
+
+    async def _stats(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """获取容器资源统计"""
+        container_id = args.get("container_id")
+        if not isinstance(container_id, str):
+            return WorkerResult(success=False, message="container_id must be a string")
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would get stats for container: {container_id}",
+                simulated=True,
+            )
+
+        if self._client is None:
+            return WorkerResult(success=False, message="Docker client not available")
+
+        try:
+            container = self._client.containers.get(container_id)
+            stats = container.stats(stream=False)
+
+            cpu_delta = stats["cpu_stats"]["cpu_usage"]["total_usage"] - \
+                       stats["precpu_stats"]["cpu_usage"]["total_usage"]
+            system_delta = stats["cpu_stats"]["system_cpu_usage"] - \
+                          stats["precpu_stats"]["system_cpu_usage"]
+            cpu_percent = (cpu_delta / system_delta) * 100.0 if system_delta > 0 else 0.0
+
+            mem_usage = stats["memory_stats"]["usage"] // (1024 * 1024)  # MB
+            mem_limit = stats["memory_stats"]["limit"] // (1024 * 1024)  # MB
+
+            data: dict[str, str | int] = {
+                "cpu_percent": int(cpu_percent),
+                "memory_usage_mb": mem_usage,
+                "memory_limit_mb": mem_limit,
+            }
+
+            return WorkerResult(
+                success=True,
+                data=cast(dict[str, str | int], data),
+                message=f"Container {container_id}: CPU {int(cpu_percent)}%, Memory {mem_usage}/{mem_limit}MB",
+                task_completed=True,
+            )
+        except NotFound:
+            return WorkerResult(
+                success=False,
+                message=f"Container not found: {container_id}",
+            )

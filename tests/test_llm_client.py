@@ -35,17 +35,26 @@ class TestLLMClient:
         assert messages[1]["content"] == "Hello"
 
     @pytest.mark.asyncio
-    async def test_generate_calls_litellm(self) -> None:
-        """测试生成调用 LiteLLM"""
+    async def test_generate_calls_openai(self) -> None:
+        """测试生成调用 OpenAI SDK"""
         config = LLMConfig(model="test-model")
         client = LLMClient(config)
 
-        mock_response = MagicMock()
-        mock_response.choices = [MagicMock()]
-        mock_response.choices[0].message.content = '{"worker": "system", "action": "test"}'
+        mock_message = MagicMock()
+        mock_message.content = '{"worker": "system", "action": "test"}'
 
-        with patch("src.llm.client.acompletion", new_callable=AsyncMock) as mock_completion:
-            mock_completion.return_value = mock_response
+        mock_choice = MagicMock()
+        mock_choice.message = mock_message
+
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+
+        with patch.object(
+            client._client.chat.completions,
+            "create",
+            new_callable=AsyncMock,
+        ) as mock_create:
+            mock_create.return_value = mock_response
 
             result = await client.generate(
                 system_prompt="System",
@@ -53,7 +62,7 @@ class TestLLMClient:
             )
 
             assert result == '{"worker": "system", "action": "test"}'
-            mock_completion.assert_called_once()
+            mock_create.assert_called_once()
 
     def test_parse_json_response_valid(self) -> None:
         """测试解析有效 JSON"""

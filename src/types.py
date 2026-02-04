@@ -20,6 +20,7 @@ class Instruction(BaseModel):
         default_factory=dict, description="参数字典"
     )
     risk_level: RiskLevel = Field(default="safe", description="风险等级")
+    dry_run: bool = Field(default=False, description="是否为模拟执行")
 
 
 class WorkerResult(BaseModel):
@@ -31,6 +32,7 @@ class WorkerResult(BaseModel):
     )
     message: str = Field(..., description="人类可读描述")
     task_completed: bool = Field(default=False, description="任务是否完成")
+    simulated: bool = Field(default=False, description="是否为模拟执行结果")
 
 
 class ConversationEntry(BaseModel):

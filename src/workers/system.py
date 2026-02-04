@@ -15,6 +15,7 @@ class SystemWorker(BaseWorker):
     """系统文件操作 Worker
 
     支持的操作:
+    - list_files: 列出目录下的文件
     - find_large_files: 查找大文件
     - check_disk_usage: 检查磁盘使用情况
     - delete_files: 删除文件
@@ -25,7 +26,7 @@ class SystemWorker(BaseWorker):
         return "system"
 
     def get_capabilities(self) -> list[str]:
-        return ["find_large_files", "check_disk_usage", "delete_files"]
+        return ["list_files", "find_large_files", "check_disk_usage", "delete_files"]
 
     async def execute(
         self,
@@ -33,10 +34,16 @@ class SystemWorker(BaseWorker):
         args: dict[str, ArgValue],
     ) -> WorkerResult:
         """执行系统操作"""
+        # 检查 dry_run 模式
+        dry_run = args.get("dry_run", False)
+        if isinstance(dry_run, str):
+            dry_run = dry_run.lower() == "true"
+
         handlers: dict[
             str,
-            Callable[[dict[str, ArgValue]], Awaitable[WorkerResult]],
+            Callable[[dict[str, ArgValue], bool], Awaitable[WorkerResult]],
         ] = {
+            "list_files": self._list_files,
             "find_large_files": self._find_large_files,
             "check_disk_usage": self._check_disk_usage,
             "delete_files": self._delete_files,
@@ -50,21 +57,69 @@ class SystemWorker(BaseWorker):
             )
 
         try:
-            return await handler(args)
+            return await handler(args, dry_run=dry_run)
         except Exception as e:
             return WorkerResult(
                 success=False,
                 message=f"Error executing {action}: {e!s}",
             )
 
+    async def _list_files(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """列出目录下的文件
+
+        Args:
+            args: 包含 path（可选，默认当前目录）
+            dry_run: 是否为模拟执行
+        """
+        path_str = args.get("path", ".")
+        if not isinstance(path_str, str):
+            return WorkerResult(success=False, message="path must be a string")
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would list files in {path_str}",
+                simulated=True,
+            )
+
+        path = Path(path_str)
+        if not path.exists():
+            return WorkerResult(success=False, message=f"Path does not exist: {path}")
+
+        if not path.is_dir():
+            return WorkerResult(success=False, message=f"Path is not a directory: {path}")
+
+        try:
+            files: list[dict[str, str]] = []
+            for item in sorted(path.iterdir()):
+                files.append({
+                    "name": item.name,
+                    "type": "dir" if item.is_dir() else "file",
+                })
+
+            return WorkerResult(
+                success=True,
+                data=cast(list[dict[str, Union[str, int]]], files),
+                message=f"Found {len(files)} items in {path}",
+                task_completed=True,
+            )
+        except (PermissionError, OSError) as e:
+            return WorkerResult(success=False, message=f"Cannot list directory: {e!s}")
+
     async def _find_large_files(
         self,
         args: dict[str, ArgValue],
+        dry_run: bool = False,
     ) -> WorkerResult:
         """查找大文件
 
         Args:
             args: 包含 path 和 min_size_mb
+            dry_run: 是否为模拟执行
         """
         path_str = args.get("path", ".")
         if not isinstance(path_str, str):
@@ -73,6 +128,13 @@ class SystemWorker(BaseWorker):
         min_size_mb = args.get("min_size_mb", 100)
         if not isinstance(min_size_mb, int):
             return WorkerResult(success=False, message="min_size_mb must be an integer")
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would search for files larger than {min_size_mb}MB in {path_str}",
+                simulated=True,
+            )
 
         path = Path(path_str)
         if not path.exists():
@@ -105,11 +167,19 @@ class SystemWorker(BaseWorker):
     async def _check_disk_usage(
         self,
         args: dict[str, ArgValue],
+        dry_run: bool = False,
     ) -> WorkerResult:
         """检查磁盘使用情况"""
         path_str = args.get("path", "/")
         if not isinstance(path_str, str):
             return WorkerResult(success=False, message="path must be a string")
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would check disk usage for {path_str}",
+                simulated=True,
+            )
 
         try:
             usage = shutil.disk_usage(path_str)
@@ -130,11 +200,13 @@ class SystemWorker(BaseWorker):
     async def _delete_files(
         self,
         args: dict[str, ArgValue],
+        dry_run: bool = False,
     ) -> WorkerResult:
         """删除文件
 
         Args:
             args: 包含 files 列表
+            dry_run: 是否为模拟执行
         """
         files = args.get("files", [])
         if not isinstance(files, list):
@@ -142,6 +214,13 @@ class SystemWorker(BaseWorker):
         
         if len(files) == 0:
             return WorkerResult(success=False, message="files list cannot be empty")
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would delete {len(files)} files: {', '.join(str(f) for f in files[:3])}{'...' if len(files) > 3 else ''}",
+                simulated=True,
+            )
 
         deleted: list[str] = []
         errors: list[str] = []
