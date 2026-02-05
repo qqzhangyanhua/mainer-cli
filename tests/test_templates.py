@@ -27,7 +27,7 @@ class TestTemplateManager:
         """测试创建默认模板"""
         templates = manager.list_templates()
         assert len(templates) > 0
-        
+
         template_names = [t.name for t in templates]
         assert "disk_cleanup" in template_names
         assert "container_health_check" in template_names
@@ -47,10 +47,10 @@ class TestTemplateManager:
                 ),
             ],
         )
-        
+
         manager.save_template(template)
         loaded = manager.load_template("test_template")
-        
+
         assert loaded is not None
         assert loaded.name == "test_template"
         assert loaded.description == "Test template"
@@ -64,10 +64,10 @@ class TestTemplateManager:
             category="test",
             steps=[],
         )
-        
+
         manager.save_template(template)
         assert manager.load_template("to_delete") is not None
-        
+
         result = manager.delete_template("to_delete")
         assert result is True
         assert manager.load_template("to_delete") is None
@@ -91,9 +91,9 @@ class TestTemplateManager:
                 ),
             ],
         )
-        
+
         instructions = manager.generate_instructions(template)
-        
+
         assert len(instructions) == 2
         assert isinstance(instructions[0], Instruction)
         assert instructions[0].worker == "system"
@@ -114,9 +114,9 @@ class TestTemplateManager:
                 ),
             ],
         )
-        
+
         context = {"container_id": "my-app"}
         instructions = manager.generate_instructions(template, context)
-        
+
         assert len(instructions) == 1
         assert instructions[0].args["container_id"] == "my-app"

@@ -96,10 +96,12 @@ class SystemWorker(BaseWorker):
         try:
             files: list[dict[str, str]] = []
             for item in sorted(path.iterdir()):
-                files.append({
-                    "name": item.name,
-                    "type": "dir" if item.is_dir() else "file",
-                })
+                files.append(
+                    {
+                        "name": item.name,
+                        "type": "dir" if item.is_dir() else "file",
+                    }
+                )
 
             return WorkerResult(
                 success=True,
@@ -148,10 +150,12 @@ class SystemWorker(BaseWorker):
                 try:
                     size = file_path.stat().st_size
                     if size >= min_size_bytes:
-                        large_files.append({
-                            "path": str(file_path),
-                            "size_mb": size // (1024 * 1024),
-                        })
+                        large_files.append(
+                            {
+                                "path": str(file_path),
+                                "size_mb": size // (1024 * 1024),
+                            }
+                        )
                 except (PermissionError, OSError):
                     continue
 
@@ -211,7 +215,7 @@ class SystemWorker(BaseWorker):
         files = args.get("files", [])
         if not isinstance(files, list):
             return WorkerResult(success=False, message="files must be a list")
-        
+
         if len(files) == 0:
             return WorkerResult(success=False, message="files list cannot be empty")
 

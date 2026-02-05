@@ -1,11 +1,10 @@
-"""ContainerWorker 测试"""
+"""ContainerWorker 测试（基于 shell 命令）"""
 
 import pytest
 
-from src.workers.container import ContainerWorker, DOCKER_AVAILABLE
+from src.workers.container import ContainerWorker
 
 
-@pytest.mark.skipif(not DOCKER_AVAILABLE, reason="Docker not available")
 class TestContainerWorker:
     """ContainerWorker 测试类"""
 

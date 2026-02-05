@@ -19,6 +19,7 @@ class LLMConfig(BaseModel):
     api_key: str = Field(default="", description="API 密钥")
     timeout: int = Field(default=30, description="超时时间(秒)")
     max_tokens: int = Field(default=2048, description="最大 token 数")
+    temperature: float = Field(default=0.2, description="采样温度（建议 0-0.3）")
 
 
 class SafetyConfig(BaseModel):
@@ -28,7 +29,9 @@ class SafetyConfig(BaseModel):
     cli_max_risk: RiskLevel = Field(default="safe", description="CLI 模式最大风险等级")
     tui_max_risk: RiskLevel = Field(default="high", description="TUI 模式最大风险等级")
     dry_run_by_default: bool = Field(default=False, description="默认启用 dry-run 模式")
-    require_dry_run_for_high_risk: bool = Field(default=True, description="高风险操作强制先 dry-run")
+    require_dry_run_for_high_risk: bool = Field(
+        default=True, description="高风险操作强制先 dry-run"
+    )
 
 
 class AuditConfig(BaseModel):
@@ -39,12 +42,22 @@ class AuditConfig(BaseModel):
     retain_days: int = Field(default=90, description="日志保留天数")
 
 
+class HttpConfig(BaseModel):
+    """HTTP 请求配置"""
+
+    timeout: int = Field(default=30, description="请求超时时间(秒)")
+    github_token: str = Field(
+        default="", description="GitHub Token（可选，用于私有仓库和提高 rate limit）"
+    )
+
+
 class OpsAIConfig(BaseModel):
     """OpsAI 完整配置"""
 
     llm: LLMConfig = Field(default_factory=LLMConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    http: HttpConfig = Field(default_factory=HttpConfig)
 
 
 class ConfigManager:

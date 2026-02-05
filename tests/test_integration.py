@@ -27,9 +27,7 @@ class TestIntegration:
         # Mock LLM 返回安全操作
         mock_response = '{"worker": "system", "action": "check_disk_usage", "args": {"path": "/"}, "risk_level": "safe"}'
 
-        with patch.object(
-            engine._llm_client, "generate", new_callable=AsyncMock
-        ) as mock_generate:
+        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = mock_response
 
             result = await engine.react_loop("检查磁盘")
@@ -38,17 +36,13 @@ class TestIntegration:
             assert "Disk" in result or "disk" in result.lower() or "Error" not in result
 
     @pytest.mark.asyncio
-    async def test_high_risk_rejected_without_callback(
-        self, config: OpsAIConfig
-    ) -> None:
+    async def test_high_risk_rejected_without_callback(self, config: OpsAIConfig) -> None:
         """测试高危操作在无回调时被拒绝"""
         engine = OrchestratorEngine(config)  # 无确认回调
 
         mock_response = '{"worker": "system", "action": "delete_files", "args": {"command": "rm -rf /"}, "risk_level": "high"}'
 
-        with patch.object(
-            engine._llm_client, "generate", new_callable=AsyncMock
-        ) as mock_generate:
+        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = mock_response
 
             result = await engine.react_loop("删除所有文件")
@@ -57,9 +51,7 @@ class TestIntegration:
             assert "HIGH-risk" in result or "requires TUI" in result
 
     @pytest.mark.asyncio
-    async def test_audit_log_created(
-        self, config: OpsAIConfig, tmp_path: Path
-    ) -> None:
+    async def test_audit_log_created(self, config: OpsAIConfig, tmp_path: Path) -> None:
         """测试审计日志创建"""
         # 设置审计日志路径
         audit_log = tmp_path / "audit.log"
@@ -69,9 +61,7 @@ class TestIntegration:
 
         mock_response = '{"worker": "system", "action": "check_disk_usage", "args": {"path": "/"}, "risk_level": "safe"}'
 
-        with patch.object(
-            engine._llm_client, "generate", new_callable=AsyncMock
-        ) as mock_generate:
+        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = mock_response
 
             await engine.react_loop("检查磁盘")

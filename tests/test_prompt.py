@@ -1,7 +1,5 @@
 """Prompt 模板测试"""
 
-import pytest
-
 from src.context.environment import EnvironmentContext
 from src.orchestrator.prompt import PromptBuilder
 from src.types import ConversationEntry, Instruction, WorkerResult
@@ -54,7 +52,7 @@ class TestPromptBuilder:
         prompt = builder.build_user_prompt("继续清理", history=history)
 
         assert "继续清理" in prompt
-        assert "Previous actions:" in prompt
+        assert "Previous conversation:" in prompt
         assert "check_disk_usage" in prompt
         assert "Disk 90% used" in prompt
 

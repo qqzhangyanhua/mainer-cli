@@ -81,10 +81,10 @@ class TestLLMClient:
         config = LLMConfig()
         client = LLMClient(config)
 
-        response = '''Here is the response:
+        response = """Here is the response:
 ```json
 {"worker": "system", "action": "test"}
-```'''
+```"""
         result = client.parse_json_response(response)
 
         assert result is not None

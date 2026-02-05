@@ -1,8 +1,6 @@
 """安全检查模块测试"""
 
-import pytest
-
-from src.orchestrator.safety import check_safety, DANGER_PATTERNS
+from src.orchestrator.safety import DANGER_PATTERNS, check_safety
 from src.types import Instruction
 
 
@@ -37,13 +35,14 @@ class TestSafetyCheck:
         assert check_safety(instruction) == "high"
 
     def test_medium_risk_rm(self) -> None:
-        """测试中危 rm"""
+        """测试 rm 命令 - delete_files action 统一为高危"""
         instruction = Instruction(
             worker="system",
             action="delete_files",
             args={"command": "rm file.txt"},
         )
-        assert check_safety(instruction) == "medium"
+        # delete_files action 被设计为高危操作
+        assert check_safety(instruction) == "high"
 
     def test_medium_risk_docker_rm(self) -> None:
         """测试中危 docker rm"""

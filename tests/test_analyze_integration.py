@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.workers.analyze import DEFAULT_ANALYZE_COMMANDS, AnalyzeWorker
-from src.workers.cache import AnalyzeTemplateCache
+from src.workers.analyze import AnalyzeTemplateCache
 
 
 class MockLLMClient:
@@ -218,7 +218,11 @@ class TestAnalyzeWorkerEndToEnd:
 
             # 应该成功执行（虽然某些命令可能失败）
             # 关键是类型被自动检测为 file
-            assert result.task_completed is True or "分析" in result.message or "文件" in result.message
+            assert (
+                result.task_completed is True
+                or "分析" in result.message
+                or "文件" in result.message
+            )
 
     @pytest.mark.asyncio
     async def test_analyze_port_with_auto_detect(self) -> None:

@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 
-import pytest
-
-from src.workers.cache import AnalyzeTemplate, AnalyzeTemplateCache
+from src.workers.analyze import AnalyzeTemplate, AnalyzeTemplateCache
 
 
 class TestAnalyzeTemplateCache:

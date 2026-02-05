@@ -13,7 +13,7 @@ from src import __version__
 from src.config.manager import ConfigManager
 from src.orchestrator.engine import OrchestratorEngine
 from src.templates import TemplateManager
-
+from src.types import WorkerResult
 
 app = typer.Typer(
     name="opsai",
@@ -79,17 +79,67 @@ def query(
         raise typer.Exit(1)
 
 
+@app.command()
+def deploy(
+    repo_url: str = typer.Argument(..., help="GitHub 仓库 URL"),
+    target_dir: str = typer.Option("~/projects", "--target-dir", "-t", help="部署目标目录"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-d", help="模拟执行，不实际部署"),
+) -> None:
+    """一键部署 GitHub 项目
+
+    自动完成：分析项目类型 → 克隆仓库 → 配置环境 → 启动服务
+
+    示例:
+        opsai deploy https://github.com/user/my-app
+        opsai deploy https://github.com/user/my-app --target-dir ~/myprojects
+        opsai deploy https://github.com/user/my-app --dry-run
+    """
+    with console.status("[bold green]正在部署项目..."):
+        result = asyncio.run(_deploy_project(repo_url, target_dir, dry_run))
+
+    if result.success:
+        console.print(Panel(result.message, title="✅ 部署成功", border_style="green"))
+    else:
+        console.print(Panel(result.message, title="❌ 部署失败", border_style="red"))
+        raise typer.Exit(code=1)
+
+
+async def _deploy_project(repo_url: str, target_dir: str, dry_run: bool) -> WorkerResult:
+    """执行部署"""
+    from src.workers.deploy import DeployWorker
+    from src.workers.http import HttpWorker
+    from src.workers.shell import ShellWorker
+
+    config_manager = ConfigManager()
+    config = config_manager.load()
+
+    http_worker = HttpWorker(config.http)
+    shell_worker = ShellWorker()
+    deploy_worker = DeployWorker(http_worker, shell_worker)
+
+    return await deploy_worker.execute(
+        "deploy",
+        {
+            "repo_url": repo_url,
+            "target_dir": target_dir,
+            "dry_run": dry_run,
+        },
+    )
+
+
 @config_app.command("show")
 def config_show() -> None:
     """显示当前配置"""
     config_manager = ConfigManager()
     config = config_manager.load()
 
-    console.print(Panel(
-        config.model_dump_json(indent=2),
-        title="Current Configuration",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            config.model_dump_json(indent=2),
+            title="Current Configuration",
+            border_style="blue",
+        )
+    )
 
 
 @config_app.command("set-llm")
@@ -97,6 +147,9 @@ def config_set_llm(
     model: str = typer.Option(..., "--model", "-m", help="模型名称"),
     base_url: Optional[str] = typer.Option(None, "--base-url", "-u", help="API 端点"),
     api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="API 密钥"),
+    temperature: Optional[float] = typer.Option(
+        None, "--temperature", help="采样温度（建议 0-0.3）"
+    ),
 ) -> None:
     """设置 LLM 配置
 
@@ -112,9 +165,34 @@ def config_set_llm(
         config.llm.base_url = base_url
     if api_key:
         config.llm.api_key = api_key
+    if temperature is not None:
+        config.llm.temperature = temperature
 
     config_manager.save(config)
     console.print("[green]✓[/green] Configuration saved")
+
+
+@config_app.command("set-http")
+def config_set_http(
+    github_token: Optional[str] = typer.Option(None, "--github-token", "-t", help="GitHub Token"),
+    timeout: Optional[int] = typer.Option(None, "--timeout", help="请求超时时间(秒)"),
+) -> None:
+    """设置 HTTP 配置
+
+    示例:
+        opsai config set-http --github-token ghp_xxxx
+        opsai config set-http --timeout 60
+    """
+    config_manager = ConfigManager()
+    config = config_manager.load()
+
+    if github_token is not None:
+        config.http.github_token = github_token
+    if timeout is not None:
+        config.http.timeout = timeout
+
+    config_manager.save(config)
+    console.print("[green]✓[/green] HTTP configuration saved")
 
 
 @template_app.command("list")
@@ -158,11 +236,13 @@ def template_show(
         console.print(f"[red]Template not found: {name}[/red]")
         raise typer.Exit(1)
 
-    console.print(Panel(
-        template.model_dump_json(indent=2),
-        title=f"Template: {name}",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            template.model_dump_json(indent=2),
+            title=f"Template: {name}",
+            border_style="blue",
+        )
+    )
 
 
 @template_app.command("run")
@@ -199,12 +279,14 @@ def template_run(
     # 生成指令
     instructions = template_manager.generate_instructions(template, context_dict)
 
-    console.print(Panel(
-        f"[bold blue]Running template: {name}[/bold blue]\n"
-        f"Steps: {len(instructions)}\n"
-        f"Dry-run: {dry_run}",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            f"[bold blue]Running template: {name}[/bold blue]\n"
+            f"Steps: {len(instructions)}\n"
+            f"Dry-run: {dry_run}",
+            border_style="blue",
+        )
+    )
 
     # 执行指令
     config_manager = ConfigManager()
@@ -215,7 +297,7 @@ def template_run(
         for idx, instruction in enumerate(instructions, 1):
             console.print(f"\n[bold]Step {idx}/{len(instructions)}:[/bold] {instruction.action}")
             result = asyncio.run(engine.execute_instruction(instruction))
-            
+
             status = "[green]✓[/green]" if result.success else "[red]✗[/red]"
             simulated = " [yellow](simulated)[/yellow]" if result.simulated else ""
             console.print(f"{status} {result.message}{simulated}")
@@ -235,7 +317,7 @@ def cache_list() -> None:
     """列出所有缓存的分析模板"""
     from rich.table import Table
 
-    from src.workers.cache import AnalyzeTemplateCache
+    from src.workers.analyze import AnalyzeTemplateCache
 
     cache = AnalyzeTemplateCache()
     templates = cache.list_all()
@@ -253,8 +335,7 @@ def cache_list() -> None:
     for name, template in templates.items():
         # 格式化命令列表（截断过长的命令）
         commands_str = ", ".join(
-            cmd[:30] + "..." if len(cmd) > 30 else cmd
-            for cmd in template.commands[:3]
+            cmd[:30] + "..." if len(cmd) > 30 else cmd for cmd in template.commands[:3]
         )
         if len(template.commands) > 3:
             commands_str += f" (+{len(template.commands) - 3} more)"
@@ -274,7 +355,7 @@ def cache_show(
     target_type: str = typer.Argument(..., help="对象类型（如 docker, process, port）"),
 ) -> None:
     """显示指定类型的缓存模板详情"""
-    from src.workers.cache import AnalyzeTemplateCache
+    from src.workers.analyze import AnalyzeTemplateCache
 
     cache = AnalyzeTemplateCache()
     templates = cache.list_all()
@@ -285,15 +366,16 @@ def cache_show(
 
     template = templates[target_type]
 
-    console.print(Panel(
-        f"[bold]Type:[/bold] {target_type}\n"
-        f"[bold]Hit Count:[/bold] {template.hit_count}\n"
-        f"[bold]Created At:[/bold] {template.created_at}\n\n"
-        f"[bold]Commands:[/bold]\n" +
-        "\n".join(f"  - {cmd}" for cmd in template.commands),
-        title=f"Cache: {target_type}",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            f"[bold]Type:[/bold] {target_type}\n"
+            f"[bold]Hit Count:[/bold] {template.hit_count}\n"
+            f"[bold]Created At:[/bold] {template.created_at}\n\n"
+            f"[bold]Commands:[/bold]\n" + "\n".join(f"  - {cmd}" for cmd in template.commands),
+            title=f"Cache: {target_type}",
+            border_style="blue",
+        )
+    )
 
 
 @cache_app.command("clear")
@@ -316,7 +398,7 @@ def cache_clear(
         opsai cache clear docker    # 只清除 docker 类型的缓存
         opsai cache clear -f        # 强制清除，不询问
     """
-    from src.workers.cache import AnalyzeTemplateCache
+    from src.workers.analyze import AnalyzeTemplateCache
 
     cache = AnalyzeTemplateCache()
 

@@ -2,17 +2,30 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+import inspect
+from collections.abc import Awaitable, Callable
+from typing import Optional
+
+from typing import TYPE_CHECKING
 
 from src.config.manager import OpsAIConfig
 from src.context.environment import EnvironmentContext
 from src.llm.client import LLMClient
+from pydantic import ValidationError
+
+from src.orchestrator.error_helper import ErrorHelper
+from src.orchestrator.preprocessor import RequestPreprocessor
 from src.orchestrator.prompt import PromptBuilder
 from src.orchestrator.safety import check_safety
+from src.orchestrator.validation import validate_instruction
 from src.types import ConversationEntry, Instruction, RiskLevel, WorkerResult
+from src.orchestrator.deploy_flow import next_deploy_instruction
 from src.workers.audit import AuditWorker
 from src.workers.base import BaseWorker
 from src.workers.system import SystemWorker
+
+if TYPE_CHECKING:
+    from src.orchestrator.graph import ReactGraph
 
 
 class OrchestratorEngine:
@@ -28,9 +41,13 @@ class OrchestratorEngine:
     def __init__(
         self,
         config: OpsAIConfig,
-        confirmation_callback: Optional[Callable[[Instruction, RiskLevel], bool]] = None,
+        confirmation_callback: Optional[
+            Callable[[Instruction, RiskLevel], bool | Awaitable[bool]]
+        ] = None,
         dry_run: bool = False,
         progress_callback: Optional[Callable[[str, str], None]] = None,
+        use_langgraph: bool = False,
+        use_sqlite_checkpoint: bool = False,
     ) -> None:
         """初始化引擎
 
@@ -39,14 +56,19 @@ class OrchestratorEngine:
             confirmation_callback: 确认回调函数，用于高危操作确认
             dry_run: 是否启用 dry-run 模式
             progress_callback: 进度回调函数，接收 (step_name, message) 用于实时显示进度
+            use_langgraph: 是否使用 LangGraph 模式（默认 False，保持向后兼容）
+            use_sqlite_checkpoint: 是否使用 SQLite 持久化检查点（仅当 use_langgraph=True 时有效）
         """
         self._config = config
         self._llm_client = LLMClient(config.llm)
         self._prompt_builder = PromptBuilder()
+        self._preprocessor = RequestPreprocessor()
+        self._error_helper = ErrorHelper()
         self._context = EnvironmentContext()
         self._confirmation_callback = confirmation_callback
         self._dry_run = dry_run or config.safety.dry_run_by_default
         self._progress_callback = progress_callback
+        self._use_langgraph = use_langgraph
 
         # 初始化 Workers
         self._workers: dict[str, BaseWorker] = {
@@ -57,6 +79,7 @@ class OrchestratorEngine:
         # 注册 ChatWorker
         try:
             from src.workers.chat import ChatWorker
+
             self._workers["chat"] = ChatWorker()
         except ImportError:
             pass
@@ -64,6 +87,7 @@ class OrchestratorEngine:
         # 注册 ShellWorker
         try:
             from src.workers.shell import ShellWorker
+
             self._workers["shell"] = ShellWorker()
         except ImportError:
             pass
@@ -71,6 +95,7 @@ class OrchestratorEngine:
         # 尝试导入并注册 ContainerWorker
         try:
             from src.workers.container import ContainerWorker
+
             self._workers["container"] = ContainerWorker()
         except ImportError:
             pass
@@ -78,9 +103,53 @@ class OrchestratorEngine:
         # 注册 AnalyzeWorker（需要 LLM 客户端）
         try:
             from src.workers.analyze import AnalyzeWorker
+
             self._workers["analyze"] = AnalyzeWorker(self._llm_client)
         except ImportError:
             pass
+
+        # 注册 HttpWorker
+        try:
+            from src.workers.http import HttpWorker
+
+            self._workers["http"] = HttpWorker(self._config.http)
+        except ImportError:
+            pass
+
+        # 注册 DeployWorker（需要 HttpWorker 和 ShellWorker）
+        http_worker = self._workers.get("http")
+        shell_worker = self._workers.get("shell")
+        if http_worker and shell_worker:
+            try:
+                from src.workers.deploy import DeployWorker
+                from src.workers.http import HttpWorker as HttpWorkerType
+                from src.workers.shell import ShellWorker as ShellWorkerType
+
+                if isinstance(http_worker, HttpWorkerType) and isinstance(
+                    shell_worker, ShellWorkerType
+                ):
+                    self._workers["deploy"] = DeployWorker(http_worker, shell_worker)
+            except ImportError:
+                pass
+
+        # 初始化 ReactGraph（如果启用）
+        self._react_graph: Optional["ReactGraph"] = None
+        if self._use_langgraph:
+            from src.orchestrator.graph import ReactGraph
+
+            # 判断是否启用 interrupt（TUI 模式才需要）
+            enable_interrupts = confirmation_callback is not None
+            self._react_graph = ReactGraph(
+                llm_client=self._llm_client,
+                workers=self._workers,
+                context=self._context,
+                dry_run=self._dry_run,
+                enable_checkpoints=True,
+                enable_interrupts=enable_interrupts,
+                use_sqlite=use_sqlite_checkpoint,
+                checkpoint_db_path=None,  # 使用默认路径
+                progress_callback=progress_callback,
+            )
 
     def get_worker(self, name: str) -> Optional[BaseWorker]:
         """获取 Worker
@@ -92,6 +161,222 @@ class OrchestratorEngine:
             Worker 实例，不存在返回 None
         """
         return self._workers.get(name)
+
+    def _get_list_command(self, target_type: str) -> str:
+        """根据目标类型返回列表命令
+
+        Args:
+            target_type: 对象类型（docker、process、port 等）
+
+        Returns:
+            对应的列表命令
+        """
+        commands = {
+            "docker": "docker ps",
+            "process": "ps aux",
+            "port": "ss -tlnp",
+            "file": "ls -la",
+            "systemd": "systemctl list-units --type=service --state=running",
+            "network": "ip addr",
+        }
+        return commands.get(target_type, "docker ps")
+
+    def _available_workers_text(self) -> str:
+        """构建可用 Worker/Action 列表文本"""
+        lines = []
+        for worker_name in sorted(self._workers.keys()):
+            actions = self._workers[worker_name].get_capabilities()
+            lines.append(f"- {worker_name}: {', '.join(actions)}")
+        return "\n".join(lines)
+
+    def _build_instruction(self, parsed: dict[str, object]) -> Instruction:
+        """从解析后的 JSON 构建指令，带基础容错"""
+        args = parsed.get("args", {})
+        if not isinstance(args, dict):
+            args = {}
+
+        risk_level = parsed.get("risk_level", "safe")
+        if risk_level not in {"safe", "medium", "high"}:
+            risk_level = "safe"
+
+        dry_run = parsed.get("dry_run", False)
+        if isinstance(dry_run, str):
+            dry_run = dry_run.lower() == "true"
+
+        return Instruction(
+            worker=str(parsed.get("worker", "")),
+            action=str(parsed.get("action", "")),
+            args=args,  # type: ignore[arg-type]
+            risk_level=risk_level,  # type: ignore[arg-type]
+            dry_run=bool(dry_run),
+        )
+
+    def _build_fallback_instruction(
+        self, user_input: str, error_message: str
+    ) -> Optional[Instruction]:
+        """构建兜底指令：校验失败时回退到 chat.respond"""
+        chat_worker = self._workers.get("chat")
+        if not chat_worker or "respond" not in chat_worker.get_capabilities():
+            return None
+
+        message = (
+            "指令校验失败，无法执行当前请求。\n"
+            f"原因: {error_message}\n\n"
+            "请更具体描述你的需求，或明确使用以下能力:\n"
+            f"{self._available_workers_text()}\n\n"
+            f"原始请求: {user_input}"
+        )
+        return Instruction(
+            worker="chat",
+            action="respond",
+            args={"message": message},
+            risk_level="safe",
+        )
+
+    def _parse_and_validate_instruction(self, response: str) -> tuple[Optional[Instruction], str]:
+        """解析并校验 LLM 指令"""
+        parsed = self._llm_client.parse_json_response(response)
+        if parsed is None:
+            return None, "Failed to parse LLM response JSON"
+
+        try:
+            instruction = self._build_instruction(parsed)
+        except ValidationError as e:
+            return None, f"Invalid instruction schema: {e}"
+
+        valid, error = validate_instruction(instruction, self._workers)
+        if not valid:
+            return None, error
+
+        return instruction, ""
+
+    def _build_repair_prompt(self, user_input: str, error_message: str) -> str:
+        """构建修复提示，要求 LLM 纠正无效指令"""
+        json_format = (
+            '{"worker": "...", "action": "...", '
+            '"args": {...}, "risk_level": "safe|medium|high"}'
+        )
+        return (
+            "Your previous JSON was invalid: "
+            f"{error_message}\n\n"
+            "Return ONLY a valid JSON object with fields:\n"
+            f"{json_format}\n\n"
+            "Allowed workers/actions:\n"
+            f"{self._available_workers_text()}\n\n"
+            f"User request: {user_input}"
+        )
+
+    async def _generate_instruction_with_retry(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        user_input: str,
+        history: Optional[list[ConversationEntry]],
+    ) -> tuple[Optional[Instruction], str]:
+        """生成指令并进行一次纠错重试"""
+        llm_response = await self._llm_client.generate(system_prompt, user_prompt, history=history)
+        instruction, error = self._parse_and_validate_instruction(llm_response)
+        if instruction:
+            return instruction, ""
+
+        repair_prompt = self._build_repair_prompt(user_input, error)
+        llm_response = await self._llm_client.generate(
+            system_prompt, repair_prompt, history=history
+        )
+        instruction, error = self._parse_and_validate_instruction(llm_response)
+        if instruction:
+            return instruction, ""
+
+        fallback = self._build_fallback_instruction(user_input, error)
+        if fallback:
+            return fallback, ""
+
+        return None, error
+
+    def _build_graph_messages(
+        self, history: Optional[list[ConversationEntry]]
+    ) -> list[dict[str, object]]:
+        """将 ConversationEntry 转换为 LangGraph 消息格式"""
+        messages: list[dict[str, object]] = []
+        if not history:
+            return messages
+
+        for entry in history:
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": f"Execute: {entry.instruction.worker}.{entry.instruction.action}",
+                    "instruction": entry.instruction.dict(),
+                    "user_input": entry.user_input,
+                }
+            )
+            messages.append(
+                {
+                    "role": "system",
+                    "content": entry.result.message,
+                    "result": entry.result.dict(),
+                }
+            )
+
+        return messages
+
+    def _parse_graph_messages(self, messages: list[object]) -> list[ConversationEntry]:
+        """从 LangGraph 消息历史解析 ConversationEntry"""
+        history: list[ConversationEntry] = []
+
+        def _message_role(message: object) -> Optional[str]:
+            if isinstance(message, dict):
+                role = message.get("role")
+            else:
+                role = getattr(message, "type", None)
+            if role == "ai":
+                return "assistant"
+            if role == "human":
+                return "user"
+            return role
+
+        def _message_get(message: object, key: str) -> object:
+            if isinstance(message, dict):
+                return message.get(key)
+            additional = getattr(message, "additional_kwargs", None)
+            if isinstance(additional, dict):
+                return additional.get(key)
+            return None
+
+        i = 0
+        while i < len(messages) - 1:
+            msg1 = messages[i]
+            msg2 = messages[i + 1]
+
+            if _message_role(msg1) == "assistant" and _message_role(msg2) == "system":
+                inst_dict = _message_get(msg1, "instruction")
+                res_dict = _message_get(msg2, "result")
+                if isinstance(inst_dict, dict) and isinstance(res_dict, dict):
+                    instruction = Instruction(
+                        worker=str(inst_dict.get("worker", "")),
+                        action=str(inst_dict.get("action", "")),
+                        args=inst_dict.get("args", {}),  # type: ignore[arg-type]
+                        risk_level=inst_dict.get("risk_level", "safe"),  # type: ignore[arg-type]
+                        dry_run=bool(inst_dict.get("dry_run", False)),
+                    )
+                    result = WorkerResult(
+                        success=bool(res_dict.get("success", False)),
+                        data=res_dict.get("data"),  # type: ignore[arg-type]
+                        message=str(res_dict.get("message", "")),
+                        task_completed=bool(res_dict.get("task_completed", False)),
+                        simulated=bool(res_dict.get("simulated", False)),
+                    )
+                    history.append(
+                        ConversationEntry(
+                            instruction=instruction,
+                            result=result,
+                            user_input=_message_get(msg1, "user_input"),  # type: ignore[arg-type]
+                        )
+                    )
+
+            i += 2
+
+        return history
 
     async def execute_instruction(self, instruction: Instruction) -> WorkerResult:
         """执行指令
@@ -120,47 +405,181 @@ class OrchestratorEngine:
         self,
         user_input: str,
         max_iterations: int = 5,
+        session_history: Optional[list[ConversationEntry]] = None,
     ) -> str:
         """执行 ReAct 循环
 
         Args:
             user_input: 用户输入
             max_iterations: 最大迭代次数，防止死循环
+            session_history: 会话级对话历史（跨轮次保持）
 
         Returns:
             最终结果消息
         """
-        conversation_history: list[ConversationEntry] = []
+        # 使用传入的会话历史，或创建新的
+        # 注意：必须保持引用，不能用 `or []`（空列表被视为 falsy）
+        conversation_history: list[ConversationEntry] = (
+            session_history if session_history is not None else []
+        )
 
         for iteration in range(max_iterations):
-            # 1. Reason: LLM 生成下一步指令
-            if self._progress_callback:
-                self._progress_callback("reasoning", "🤔 Analyzing your request...")
+            # 0. 预处理：意图检测 + 指代解析
+            preprocessed = self._preprocessor.preprocess(user_input, conversation_history)
 
-            system_prompt = self._prompt_builder.build_system_prompt(self._context)
-            user_prompt = self._prompt_builder.build_user_prompt(
-                user_input, history=conversation_history
-            )
+            # 高置信度的解释意图 - 直接生成 Instruction，绕过 LLM
+            if preprocessed.intent == "identity":
+                chat_worker = self.get_worker("chat")
+                if chat_worker and "respond" in chat_worker.get_capabilities():
+                    if self._progress_callback:
+                        self._progress_callback("preprocessing", "👋 Detected: identity request")
 
-            llm_response = await self._llm_client.generate(system_prompt, user_prompt)
-            parsed = self._llm_client.parse_json_response(llm_response)
+                    instruction = Instruction(
+                        worker="chat",
+                        action="respond",
+                        args={
+                            "message": (
+                                "我是一个运维助手，可以帮你排查问题、部署项目、查看日志、"
+                                "执行常用命令并解释输出。告诉我你的需求即可。"
+                            )
+                        },
+                        risk_level="safe",
+                    )
+                else:
+                    # 无 chat worker，回退到普通流程
+                    if self._progress_callback:
+                        self._progress_callback("reasoning", "🤔 Analyzing your request...")
 
-            if parsed is None:
-                return f"Error: Failed to parse LLM response: {llm_response}"
+                    system_prompt = self._prompt_builder.build_system_prompt(
+                        self._context,
+                        available_workers=self._workers,
+                    )
+                    user_prompt = self._prompt_builder.build_user_prompt(user_input, history=None)
 
-            # 构建指令
-            instruction = Instruction(
-                worker=str(parsed.get("worker", "")),
-                action=str(parsed.get("action", "")),
-                args=parsed.get("args", {}),  # type: ignore[arg-type]
-                risk_level=parsed.get("risk_level", "safe"),  # type: ignore[arg-type]
-            )
+                    instruction, error = await self._generate_instruction_with_retry(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        user_input=user_input,
+                        history=conversation_history,
+                    )
+                    if instruction is None:
+                        return f"Error: {error}"
+            elif (
+                preprocessed.confidence == "high"
+                and preprocessed.intent == "explain"
+                and preprocessed.resolved_target
+            ):
+                if self._progress_callback:
+                    target = preprocessed.resolved_target
+                    ttype = preprocessed.target_type
+                    self._progress_callback(
+                        "preprocessing",
+                        f"🎯 Detected: explain '{target}' ({ttype})",
+                    )
+
+                instruction = Instruction(
+                    worker="analyze",
+                    action="explain",
+                    args={
+                        "target": preprocessed.resolved_target,
+                        "type": preprocessed.target_type or "docker",
+                    },
+                    risk_level="safe",
+                )
+                # 跳过 LLM 推理，直接执行
+            elif (
+                preprocessed.intent == "explain"
+                and preprocessed.needs_context
+                and preprocessed.target_type
+            ):
+                # 需要先获取上下文再分析
+                # 根据类型生成列表命令
+                if self._progress_callback:
+                    self._progress_callback(
+                        "preprocessing",
+                        f"🔍 Need context for {preprocessed.target_type}, fetching list first...",
+                    )
+
+                list_command = self._get_list_command(preprocessed.target_type)
+                instruction = Instruction(
+                    worker="shell",
+                    action="execute_command",
+                    args={"command": list_command},
+                    risk_level="safe",
+                )
+                # task_completed 默认为 False，循环会继续
+            elif preprocessed.intent == "deploy":
+                # deploy 意图 - 使用确定性流程，避免重复抓取 README
+                repo_url = self._preprocessor.extract_repo_url(user_input)
+                if repo_url and self.get_worker("deploy"):
+                    if self._progress_callback:
+                        self._progress_callback(
+                            "preprocessing", f"🚀 Deploy intent detected for: {repo_url}"
+                        )
+
+                    instruction, error = next_deploy_instruction(
+                        repo_url=repo_url,
+                        history=conversation_history,
+                        user_input=user_input,
+                        target_dir="~/projects",
+                    )
+                    if instruction is None:
+                        return f"Error: {error}"
+                else:
+                    # 无法提取 URL 或缺少 deploy worker，回退到普通处理
+                    if self._progress_callback:
+                        self._progress_callback("reasoning", "🤔 Analyzing your request...")
+
+                    system_prompt = self._prompt_builder.build_system_prompt(
+                        self._context,
+                        available_workers=self._workers,
+                    )
+                    user_prompt = self._prompt_builder.build_user_prompt(user_input, history=None)
+
+                    instruction, error = await self._generate_instruction_with_retry(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        user_input=user_input,
+                        history=conversation_history,
+                    )
+                    if instruction is None:
+                        return f"Error: {error}"
+            else:
+                # 1. Reason: LLM 生成下一步指令
+                if self._progress_callback:
+                    self._progress_callback("reasoning", "🤔 Analyzing your request...")
+
+                system_prompt = self._prompt_builder.build_system_prompt(
+                    self._context,
+                    available_workers=self._workers,
+                )
+                # 不再在 user_prompt 中嵌入历史，改用 LLM 标准多轮对话格式
+                user_prompt = self._prompt_builder.build_user_prompt(user_input, history=None)
+
+                instruction, error = await self._generate_instruction_with_retry(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    user_input=user_input,
+                    history=conversation_history,
+                )
+                if instruction is None:
+                    return f"Error: {error}"
+
+            # 指令校验（防止未知 Worker/Action）
+            valid, error = validate_instruction(instruction, self._workers)
+            if not valid:
+                fallback = self._build_fallback_instruction(user_input, error)
+                if fallback:
+                    instruction = fallback
+                else:
+                    return f"Error: {error}"
 
             # 显示生成的指令
             if self._progress_callback:
+                worker_action = f"{instruction.worker}.{instruction.action}"
                 self._progress_callback(
                     "instruction",
-                    f"📋 Instruction: {instruction.worker}.{instruction.action}(args={instruction.args})"
+                    f"📋 Instruction: {worker_action}(args={instruction.args})",
                 )
 
             # 2. Safety Check
@@ -171,21 +590,36 @@ class OrchestratorEngine:
             if risk in ["medium", "high"]:
                 if self._confirmation_callback:
                     confirmed = self._confirmation_callback(instruction, risk)
+                    if inspect.isawaitable(confirmed):
+                        confirmed = await confirmed
                     if not confirmed:
                         # 记录拒绝
                         await self._log_operation(
-                            user_input, instruction, risk, confirmed=False, exit_code=-1, output="Rejected by user"
+                            user_input,
+                            instruction,
+                            risk,
+                            confirmed=False,
+                            exit_code=-1,
+                            output="Rejected by user",
                         )
                         return "Operation cancelled by user"
                 else:
                     # CLI 模式无确认回调，自动拒绝
-                    return f"Error: {risk.upper()}-risk operation requires TUI mode for confirmation"
+                    return (
+                        f"Error: {risk.upper()}-risk operation requires TUI mode for confirmation"
+                    )
 
             # 3. Act: 执行 Worker
             if self._progress_callback:
-                self._progress_callback("executing", f"⚙️  Executing {instruction.worker}.{instruction.action}...")
+                self._progress_callback(
+                    "executing", f"⚙️  Executing {instruction.worker}.{instruction.action}..."
+                )
 
             result = await self.execute_instruction(instruction)
+
+            # 如果失败，增强错误消息
+            if not result.success:
+                result = self._error_helper.enhance_error_message(result, user_input)
 
             if self._progress_callback:
                 status_emoji = "✅" if result.success else "❌"
@@ -193,14 +627,21 @@ class OrchestratorEngine:
 
             # 4. 记录到审计日志
             await self._log_operation(
-                user_input, instruction, risk, confirmed=True,
+                user_input,
+                instruction,
+                risk,
+                confirmed=True,
                 exit_code=0 if result.success else 1,
                 output=result.message,
             )
 
-            # 5. 记录历史
+            # 5. 记录历史（包含用户原始输入）
             conversation_history.append(
-                ConversationEntry(instruction=instruction, result=result)
+                ConversationEntry(
+                    instruction=instruction,
+                    result=result,
+                    user_input=user_input,
+                )
             )
 
             # 6. 判断是否完成
@@ -208,6 +649,112 @@ class OrchestratorEngine:
                 return result.message
 
         return "Task incomplete: reached maximum iterations"
+
+    async def react_loop_graph(
+        self,
+        user_input: str,
+        max_iterations: int = 5,
+        session_id: Optional[str] = None,
+        session_history: Optional[list[ConversationEntry]] = None,
+    ) -> str:
+        """执行 ReAct 循环（LangGraph 版本）
+
+        Args:
+            user_input: 用户输入
+            max_iterations: 最大迭代次数
+            session_id: 会话 ID（用于持久化和恢复）
+
+        Returns:
+            最终结果消息
+        """
+        if self._react_graph is None:
+            return "Error: LangGraph mode not enabled. Set use_langgraph=True in constructor."
+
+        try:
+            messages = self._build_graph_messages(session_history)
+            final_state = await self._react_graph.run(
+                user_input=user_input,
+                session_id=session_id,
+                max_iterations=max_iterations,
+                messages=messages,
+            )
+
+            # 检查是否被中断（需要审批）
+            if final_state.get("needs_approval") and not final_state.get("approval_granted"):
+                # 返回特殊消息，TUI 可以据此判断需要调用 resume_react_loop
+                return "__APPROVAL_REQUIRED__"
+
+            # 更新会话历史
+            if session_history is not None:
+                parsed = self._parse_graph_messages(final_state.get("messages", []))
+                session_history.clear()
+                session_history.extend(parsed)
+
+            return final_state.get("final_message", "Task completed")
+        except Exception as e:
+            return f"Error in ReactGraph: {e}"
+
+    async def resume_react_loop(
+        self,
+        session_id: str,
+        approval_granted: bool = True,
+        session_history: Optional[list[ConversationEntry]] = None,
+    ) -> str:
+        """恢复被中断的 ReAct 循环（审批后继续）
+
+        Args:
+            session_id: 会话 ID
+            approval_granted: 审批是否通过
+
+        Returns:
+            最终结果消息
+        """
+        if self._react_graph is None:
+            return "Error: LangGraph mode not enabled"
+
+        try:
+            final_state = await self._react_graph.resume(
+                session_id=session_id,
+                approval_granted=approval_granted,
+            )
+
+            if final_state.get("needs_approval") and not final_state.get("approval_granted"):
+                return "__APPROVAL_REQUIRED__"
+
+            # 更新会话历史
+            if session_history is not None:
+                parsed = self._parse_graph_messages(final_state.get("messages", []))
+                session_history.clear()
+                session_history.extend(parsed)
+
+            return final_state.get("final_message", "Task completed")
+        except Exception as e:
+            return f"Error resuming ReactGraph: {e}"
+
+    def get_graph_state(self, session_id: str) -> Optional[dict[str, object]]:
+        """获取 LangGraph 会话状态
+
+        Args:
+            session_id: 会话 ID
+
+        Returns:
+            当前状态，不存在返回 None
+        """
+        if self._react_graph is None:
+            return None
+
+        return self._react_graph.get_state(session_id)
+
+    def get_mermaid_diagram(self) -> str:
+        """获取 ReAct 工作流的 Mermaid 图表
+
+        Returns:
+            Mermaid 图表字符串
+        """
+        if self._react_graph is None:
+            return "Error: LangGraph mode not enabled"
+
+        return self._react_graph.get_mermaid_diagram()
 
     async def _log_operation(
         self,

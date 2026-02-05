@@ -4,7 +4,12 @@
       "Bash(uv run:*)",
       "Bash(uv sync:*)",
       "Bash(uv pip:*)",
-      "mcp__augment-context-engine__codebase-retrieval"
+      "mcp__augment-context-engine__codebase-retrieval",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(uv add:*)",
+      "Bash(git diff:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

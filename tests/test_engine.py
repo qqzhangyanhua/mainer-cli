@@ -1,6 +1,6 @@
 """ReAct 引擎测试"""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -44,9 +44,7 @@ class TestOrchestratorEngine:
         assert result.data is not None
 
     @pytest.mark.asyncio
-    async def test_execute_instruction_unknown_worker(
-        self, engine: OrchestratorEngine
-    ) -> None:
+    async def test_execute_instruction_unknown_worker(self, engine: OrchestratorEngine) -> None:
         """测试执行未知 Worker 指令"""
         instruction = Instruction(
             worker="unknown",
@@ -65,9 +63,7 @@ class TestOrchestratorEngine:
         # Mock LLM 响应
         mock_llm_response = '{"worker": "system", "action": "check_disk_usage", "args": {"path": "/"}, "risk_level": "safe"}'
 
-        with patch.object(
-            engine._llm_client, "generate", new_callable=AsyncMock
-        ) as mock_generate:
+        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = mock_llm_response
 
             # Mock task_completed
@@ -89,11 +85,11 @@ class TestOrchestratorEngine:
     @pytest.mark.asyncio
     async def test_react_loop_max_iterations(self, engine: OrchestratorEngine) -> None:
         """测试 ReAct 循环最大迭代"""
-        mock_llm_response = '{"worker": "system", "action": "check_disk_usage", "args": {}, "risk_level": "safe"}'
+        mock_llm_response = (
+            '{"worker": "system", "action": "check_disk_usage", "args": {}, "risk_level": "safe"}'
+        )
 
-        with patch.object(
-            engine._llm_client, "generate", new_callable=AsyncMock
-        ) as mock_generate:
+        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
             mock_generate.return_value = mock_llm_response
 
             with patch.object(

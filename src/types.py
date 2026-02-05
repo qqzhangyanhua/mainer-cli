@@ -12,12 +12,12 @@ ArgValue = Union[str, int, bool, list[str], dict[str, str]]
 
 # 支持的分析对象类型
 AnalyzeTargetType = Literal[
-    "docker",    # Docker 容器
-    "process",   # 进程
-    "port",      # 端口
-    "file",      # 文件
-    "systemd",   # Systemd 服务
-    "network",   # 网络连接
+    "docker",  # Docker 容器
+    "process",  # 进程
+    "port",  # 端口
+    "file",  # 文件
+    "systemd",  # Systemd 服务
+    "network",  # 网络连接
 ]
 
 
@@ -34,9 +34,7 @@ class Instruction(BaseModel):
 
     worker: str = Field(..., description="目标 Worker 标识符")
     action: str = Field(..., description="动作名称")
-    args: dict[str, ArgValue] = Field(
-        default_factory=dict, description="参数字典"
-    )
+    args: dict[str, ArgValue] = Field(default_factory=dict, description="参数字典")
     risk_level: RiskLevel = Field(default="safe", description="风险等级")
     dry_run: bool = Field(default=False, description="是否为模拟执行")
 
@@ -60,3 +58,40 @@ class ConversationEntry(BaseModel):
 
     instruction: Instruction
     result: WorkerResult
+    user_input: Optional[str] = Field(default=None, description="用户原始输入")
+
+
+# 预处理器相关类型
+PreprocessIntent = Literal[
+    "explain",  # 解释/分析对象
+    "list",  # 列出对象
+    "execute",  # 执行操作
+    "greeting",  # 问候
+    "identity",  # 自我介绍
+    "deploy",  # 部署项目
+    "unknown",  # 未知意图
+]
+
+PreprocessConfidence = Literal["high", "medium", "low"]
+
+
+class PreprocessedRequest(BaseModel):
+    """预处理后的请求"""
+
+    original_input: str = Field(..., description="原始用户输入")
+    intent: PreprocessIntent = Field(default="unknown", description="识别的意图")
+    confidence: PreprocessConfidence = Field(default="low", description="置信度")
+    resolved_target: Optional[str] = Field(default=None, description="解析后的目标对象名称")
+    target_type: Optional[AnalyzeTargetType] = Field(default=None, description="目标对象类型")
+    enriched_input: Optional[str] = Field(default=None, description="增强后的输入（用于传给 LLM）")
+    needs_context: bool = Field(default=False, description="是否需要先获取上下文信息")
+
+
+# GitHub 文件信息（用于 list_github_files 返回）
+class GitHubFileInfo(BaseModel):
+    """GitHub 仓库文件信息"""
+
+    name: str = Field(..., description="文件名")
+    type: Literal["file", "dir"] = Field(..., description="类型：文件或目录")
+    path: str = Field(..., description="文件路径")
+    size: int = Field(default=0, description="文件大小（字节）")

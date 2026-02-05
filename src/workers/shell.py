@@ -44,11 +44,7 @@ class ShellWorker(BaseWorker):
         truncated_chars = len(output) - TRUNCATE_HEAD - TRUNCATE_TAIL
         head = output[:TRUNCATE_HEAD]
         tail = output[-TRUNCATE_TAIL:]
-        truncated_output = (
-            f"{head}\n\n"
-            f"... [truncated {truncated_chars} characters] ...\n\n"
-            f"{tail}"
-        )
+        truncated_output = f"{head}\n\n... [truncated {truncated_chars} characters] ...\n\n{tail}"
         return truncated_output, True
 
     async def execute(
@@ -126,7 +122,7 @@ class ShellWorker(BaseWorker):
                         "stderr": stderr,
                         "exit_code": exit_code,
                         "raw_output": raw_output,  # 用于 LLM 上下文传递
-                        "truncated": truncated,    # 标记是否被截断
+                        "truncated": truncated,  # 标记是否被截断
                     },
                 ),
                 message="\n".join(message_parts),

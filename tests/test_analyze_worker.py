@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Optional
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -69,13 +69,15 @@ class TestAnalyzeWorker:
         import tempfile
         from pathlib import Path
 
-        from src.workers.cache import AnalyzeTemplateCache
+        from src.workers.analyze import AnalyzeTemplateCache
 
         # 模拟 LLM 返回：第一次返回简单命令列表，第二次返回分析总结
-        mock_client = MockLLMClient([
-            '["echo {name}", "echo info about {name}"]',
-            "这是一个测试对象，用于验证分析流程。",
-        ])
+        mock_client = MockLLMClient(
+            [
+                '["echo {name}", "echo info about {name}"]',
+                "这是一个测试对象，用于验证分析流程。",
+            ]
+        )
 
         # 使用临时缓存，避免被其他测试影响
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -98,12 +100,14 @@ class TestAnalyzeWorker:
         import tempfile
         from pathlib import Path
 
-        from src.workers.cache import AnalyzeTemplateCache
+        from src.workers.analyze import AnalyzeTemplateCache
 
         # 模拟 LLM 返回分析总结
-        mock_client = MockLLMClient([
-            "这是一个测试对象。",
-        ])
+        mock_client = MockLLMClient(
+            [
+                "这是一个测试对象。",
+            ]
+        )
 
         # 使用临时缓存
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -135,9 +139,9 @@ class TestAnalyzeWorker:
         mock_client = MagicMock()
         worker = AnalyzeWorker(mock_client)
 
-        response = '''```json
+        response = """```json
 ["docker inspect {name}", "docker logs {name}"]
-```'''
+```"""
         commands = worker._parse_command_list(response)
 
         assert commands == ["docker inspect {name}", "docker logs {name}"]
@@ -196,9 +200,11 @@ class TestAnalyzeWorker:
     @pytest.mark.asyncio
     async def test_all_commands_fail_returns_error(self) -> None:
         """测试所有命令都失败时返回错误"""
-        mock_client = MockLLMClient([
-            '["nonexistent_cmd_1", "nonexistent_cmd_2"]',
-        ])
+        mock_client = MockLLMClient(
+            [
+                '["nonexistent_cmd_1", "nonexistent_cmd_2"]',
+            ]
+        )
         worker = AnalyzeWorker(mock_client)  # type: ignore[arg-type]
 
         result = await worker.execute(
@@ -215,11 +221,13 @@ class TestAnalyzeWorker:
         import tempfile
         from pathlib import Path
 
-        from src.workers.cache import AnalyzeTemplateCache
+        from src.workers.analyze import AnalyzeTemplateCache
 
-        mock_client = MockLLMClient([
-            '[]',  # 空命令列表
-        ])
+        mock_client = MockLLMClient(
+            [
+                "[]",  # 空命令列表
+            ]
+        )
 
         # 使用临时缓存，避免被其他测试影响
         with tempfile.TemporaryDirectory() as tmpdir:

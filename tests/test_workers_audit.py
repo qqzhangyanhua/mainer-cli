@@ -1,6 +1,5 @@
 """AuditWorker 测试"""
 
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -60,11 +59,27 @@ class TestAuditWorker:
         # 写入两条日志
         await worker.execute(
             "log_operation",
-            {"input": "first", "worker": "system", "action": "check", "risk": "safe", "confirmed": "yes", "exit_code": 0, "output": "ok"},
+            {
+                "input": "first",
+                "worker": "system",
+                "action": "check",
+                "risk": "safe",
+                "confirmed": "yes",
+                "exit_code": 0,
+                "output": "ok",
+            },
         )
         await worker.execute(
             "log_operation",
-            {"input": "second", "worker": "system", "action": "check", "risk": "safe", "confirmed": "yes", "exit_code": 0, "output": "ok"},
+            {
+                "input": "second",
+                "worker": "system",
+                "action": "check",
+                "risk": "safe",
+                "confirmed": "yes",
+                "exit_code": 0,
+                "output": "ok",
+            },
         )
 
         content = log_path.read_text()

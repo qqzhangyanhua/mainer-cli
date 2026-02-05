@@ -4,16 +4,15 @@ from __future__ import annotations
 
 from src.types import Instruction, RiskLevel
 
-
 # 危险模式定义
 DANGER_PATTERNS: dict[str, list[str]] = {
     "high": [
         "rm -rf",
         "kill -9",
-        "mkfs",          # 磁盘格式化（移除通用的 "format"）
+        "mkfs",  # 磁盘格式化（移除通用的 "format"）
         "dd if=",
         "> /dev/",
-        ":(){:|:&};:",   # Fork bomb
+        ":(){:|:&};:",  # Fork bomb
         "chmod -R 777",
         "chown -R",
         "delete_files",  # SystemWorker 删除文件操作
@@ -28,7 +27,7 @@ DANGER_PATTERNS: dict[str, list[str]] = {
         "reboot",
         "shutdown",
         "restart",  # 容器重启
-        "stop",     # 容器停止
+        "stop",  # 容器停止
     ],
 }
 

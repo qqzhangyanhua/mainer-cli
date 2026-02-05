@@ -2,11 +2,9 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from src.cli import app
-
 
 runner = CliRunner()
 
@@ -18,7 +16,7 @@ class TestCLI:
         """测试版本命令"""
         result = runner.invoke(app, ["--version"])
         assert result.exit_code == 0
-        assert "0.1.0" in result.stdout
+        assert "0.2.0" in result.stdout
 
     def test_help(self) -> None:
         """测试帮助"""

@@ -2,9 +2,7 @@
 
 from pathlib import Path
 
-import pytest
-
-from src.config.manager import ConfigManager, OpsAIConfig, LLMConfig, SafetyConfig, AuditConfig
+from src.config.manager import ConfigManager, LLMConfig, OpsAIConfig
 
 
 class TestOpsAIConfig:
@@ -51,9 +49,7 @@ class TestConfigManager:
         manager = ConfigManager(config_path=config_path)
 
         # 修改配置
-        config = OpsAIConfig(
-            llm=LLMConfig(model="gpt-4o", api_key="test-key")
-        )
+        config = OpsAIConfig(llm=LLMConfig(model="gpt-4o", api_key="test-key"))
         manager.save(config)
 
         # 重新加载
