@@ -20,7 +20,7 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.timer import Timer
-from textual.widgets import Button, Header, Input, ListItem, ListView, RichLog, Static
+from textual.widgets import Button, Header, Input, ListItem, ListView, RichLog, Static, LoadingIndicator
 from rich.syntax import Syntax
 from textual import events
 from textual.suggester import Suggester
@@ -419,6 +419,32 @@ class OpsAIApp(App[str]):
         width: 100%;
     }
 
+    #loading-container {
+        height: auto;
+        padding: 0 1;
+        display: none;
+    }
+
+    #loading-container.visible {
+        display: block;
+    }
+
+    #loading-container Horizontal {
+        height: 1;
+        width: 100%;
+    }
+
+    #loading-indicator {
+        width: 3;
+        height: 1;
+    }
+
+    #loading-text {
+        width: 1fr;
+        height: 1;
+        color: $text-muted;
+    }
+
     Input .input--suggestion {
         color: #777777;
         text-style: dim;
@@ -488,10 +514,16 @@ class OpsAIApp(App[str]):
         # 斜杠命令下拉提示
         self._slash_menu_items: list[str] = []
         self._slash_menu_visible: bool = False
+        # loading 状态文本
+        self._loading_text: str = "思考中..."
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield RichLog(id="history", wrap=True, highlight=True, markup=True)
+        with Container(id="loading-container"):
+            with Horizontal():
+                yield LoadingIndicator(id="loading-indicator")
+                yield Static("思考中...", id="loading-text")
         yield Container(
             Input(placeholder="Enter your request...", id="user-input"),
             id="input-container",
@@ -505,9 +537,15 @@ class OpsAIApp(App[str]):
         input_widget = self.query_one("#user-input", Input)
         input_widget.suggester = SlashCommandSuggester(self._get_slash_suggestion)
 
-        # 检查是否首次运行
+        # 始终显示启动画面
+        self._show_welcome_banner()
+
+        # 首次运行额外显示环境检测向导
         if self._is_first_run():
             self._show_welcome_wizard()
+
+        # 输入框自动获取焦点
+        input_widget.focus()
 
     def _is_first_run(self) -> bool:
         """检查是否首次运行
@@ -523,6 +561,32 @@ class OpsAIApp(App[str]):
         marker_file = Path.home() / ".opsai" / ".first_run_complete"
         marker_file.parent.mkdir(parents=True, exist_ok=True)
         marker_file.touch()
+
+    def _show_welcome_banner(self) -> None:
+        """显示启动欢迎画面"""
+        history = self.query_one("#history", RichLog)
+
+        # 获取信息
+        version = __version__
+        model = self._config.llm.model
+        cwd = str(Path.cwd()).replace(str(Path.home()), "~")
+
+        # ASCII Logo + 信息
+        banner = (
+            "[green]   ▄▄▄▄▄▄▄[/green]\n"
+            f"[green]   █ ●  ● █[/green]      [bold]OpsAI[/bold] v{version}\n"
+            f"[green]   █  ▀▀  █[/green]      [dim]LLM: {model}[/dim]\n"
+            f"[green]   ▀▀█▀█▀▀[/green]       [dim]{cwd}[/dim]\n"
+            "\n"
+            "[bold]Hi! I'm OpsAI, your terminal assistant.[/bold]\n"
+            "\n"
+            "[dim]Try:[/dim]\n"
+            '  [cyan]"查看磁盘使用情况"[/cyan]    [cyan]"列出所有容器"[/cyan]\n'
+            '  [cyan]"检查内存占用"[/cyan]        [cyan]"重启 nginx 容器"[/cyan]\n'
+            "\n"
+            "[dim]Commands: /help /config /clear /history[/dim]\n"
+        )
+        history.write(banner)
 
     def _show_welcome_wizard(self) -> None:
         """显示欢迎向导"""
@@ -660,22 +724,30 @@ class OpsAIApp(App[str]):
             input_widget.focus()
 
     def _on_progress(self, step: str, message: str) -> None:
-        """进度回调：实时显示执行步骤"""
-        history = self.query_one("#history", RichLog)
-
-        # 只显示过程信息，不显示最终结果（避免重复）
+        """进度回调：更新 loading 状态文本"""
+        # 忽略 result 步骤（由 _render_result 处理）
         if step == "result":
-            # 只显示执行状态（✅/❌），不显示完整输出
-            if message.startswith("✅") or message.startswith("❌"):
-                status_line = message.split("\n")[0]  # 只取第一行状态
-                history.write(f"[dim]{status_line}[/dim]")
             return
 
-        if not self._verbose_enabled:
-            return
+        # 更新 loading 文本
+        self._update_loading_text(message)
 
-        # 显示执行中标识
-        history.write(f"[dim]⏳ {message}[/dim]")
+    def _show_loading(self, text: str = "思考中...") -> None:
+        """显示 loading 动画"""
+        loading_container = self.query_one("#loading-container", Container)
+        loading_text = self.query_one("#loading-text", Static)
+        loading_text.update(text)
+        loading_container.add_class("visible")
+
+    def _hide_loading(self) -> None:
+        """隐藏 loading 动画"""
+        loading_container = self.query_one("#loading-container", Container)
+        loading_container.remove_class("visible")
+
+    def _update_loading_text(self, text: str) -> None:
+        """更新 loading 状态文本"""
+        loading_text = self.query_one("#loading-text", Static)
+        loading_text.update(text)
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """处理输入提交"""
@@ -705,6 +777,9 @@ class OpsAIApp(App[str]):
         # 显示用户输入
         history.write(f"[bold cyan]You:[/bold cyan] {user_input}")
 
+        # 显示 loading 动画
+        self._show_loading("思考中...")
+
         # 异步执行请求，避免阻塞 UI
         self._current_task = asyncio.create_task(self._run_request(user_input))
 
@@ -720,6 +795,9 @@ class OpsAIApp(App[str]):
             )
 
             while result == "__APPROVAL_REQUIRED__":
+                # 暂时隐藏 loading（等待用户确认）
+                self._hide_loading()
+
                 state = self._engine.get_graph_state(session_id)
                 if not state:
                     result = "错误：需要审批但状态缺失"
@@ -744,6 +822,11 @@ class OpsAIApp(App[str]):
                 risk_level = cast(RiskLevel, risk)
 
                 approved = await self._request_confirmation(instruction, risk_level)
+
+                # 用户确认后恢复 loading
+                if approved:
+                    self._show_loading("执行中...")
+
                 result = await self._engine.resume_react_loop(
                     session_id,
                     approval_granted=approved,
@@ -758,6 +841,8 @@ class OpsAIApp(App[str]):
         except Exception as e:
             history.write(f"[bold red]Error:[/bold red] {e!s}")
         finally:
+            # 隐藏 loading
+            self._hide_loading()
             self._current_task = None
 
     def _render_result(self, result: str) -> None:

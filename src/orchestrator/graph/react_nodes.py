@@ -227,17 +227,14 @@ class ReactNodes:
 
     async def preprocess_node(self, state: ReactState) -> dict[str, object]:
         """预处理节点：意图检测 + 指代解析"""
-        self._report_progress("preprocessing", "🔍 分析请求意图...")
-
         user_input = state.get("user_input", "")
         history = self._build_conversation_history(state)
 
         preprocessed = self._preprocessor.preprocess(user_input, history)
 
-        self._report_progress(
-            "preprocessing",
-            f"✅ Intent: {preprocessed.intent} (confidence: {preprocessed.confidence})",
-        )
+        # 简单意图不输出进度（greeting, identity, chat）
+        if preprocessed.intent not in ("greeting", "identity", "chat"):
+            self._report_progress("preprocessing", "分析请求...")
 
         return {
             "preprocessed": preprocessed.dict(),
@@ -245,7 +242,11 @@ class ReactNodes:
 
     async def reason_node(self, state: ReactState) -> dict[str, object]:
         """推理节点：LLM 生成下一步指令"""
-        self._report_progress("reasoning", "🤔 生成执行计划...")
+        preprocessed_dict = state.get("preprocessed", {})
+        intent = preprocessed_dict.get("intent", "")
+
+        # 简单意图不输出进度
+        is_simple_intent = intent in ("greeting", "identity", "chat")
 
         user_input = state.get("user_input", "")
         preprocessed_dict = state.get("preprocessed", {})
@@ -266,7 +267,7 @@ class ReactNodes:
                     },
                     risk_level="safe",
                 )
-                self._report_progress("reasoning", "✅ 生成身份介绍回复")
+                # 简单意图不输出进度
             else:
                 system_prompt = self._prompt_builder.build_system_prompt(
                     self._context,
@@ -375,7 +376,8 @@ class ReactNodes:
                     "is_error": True,
                     "error_message": error,
                 }
-            self._report_progress("reasoning", "✅ LLM 生成指令完成")
+            if not is_simple_intent:
+                self._report_progress("reasoning", "指令生成完成")
 
         # 指令校验（防止未知 Worker/Action）
         valid, error = validate_instruction(instruction, self._workers)
@@ -389,19 +391,21 @@ class ReactNodes:
                     "error_message": error,
                 }
 
-        # 显示生成的指令
-        self._report_progress(
-            "instruction",
-            f"📋 {instruction.worker}.{instruction.action}({instruction.args})",
-        )
+        # 只对复杂操作显示指令详情（不显示 chat.respond 等简单指令）
+        if not is_simple_intent and instruction.worker != "chat":
+            self._report_progress(
+                "instruction",
+                f"{instruction.worker}.{instruction.action}",
+            )
 
         return {
             "current_instruction": instruction.dict(),
+            "is_simple_intent": is_simple_intent,
         }
 
     async def safety_node(self, state: ReactState) -> dict[str, object]:
         """安全检查节点"""
-        self._report_progress("safety", "🔒 安全检查...")
+        is_simple_intent = state.get("is_simple_intent", False)
 
         inst_dict = state.get("current_instruction", {})
         instruction = Instruction(
@@ -413,8 +417,10 @@ class ReactNodes:
 
         risk = check_safety(instruction)
 
-        risk_emoji = {"safe": "✅", "medium": "⚠️", "high": "🚨"}.get(risk, "❓")
-        self._report_progress("safety", f"{risk_emoji} Risk level: {risk}")
+        # 只对非 safe 操作显示安全检查
+        if risk != "safe" and not is_simple_intent:
+            risk_label = {"medium": "[!]", "high": "[!!]"}.get(risk, "[?]")
+            self._report_progress("safety", f"{risk_label} 风险等级: {risk}")
 
         # 判断是否需要审批
         needs_approval = risk in ["medium", "high"]
@@ -438,7 +444,11 @@ class ReactNodes:
 
     async def execute_node(self, state: ReactState) -> dict[str, object]:
         """执行节点：调用 Worker"""
-        self._report_progress("executing", "⚙️  执行中...")
+        is_simple_intent = state.get("is_simple_intent", False)
+
+        # 只对复杂操作显示执行中
+        if not is_simple_intent:
+            self._report_progress("executing", "执行中...")
 
         inst_dict = state.get("current_instruction", {})
         instruction = Instruction(
