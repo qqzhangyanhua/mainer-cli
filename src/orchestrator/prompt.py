@@ -82,11 +82,19 @@ Worker Details:
   - Required args: {{"command": "string"}}
   - Optional args: {{"working_dir": "string"}}
   - CRITICAL: Use FULL commands to show complete information
+  - ⚠️ OS-SPECIFIC COMMANDS (check Current Environment above!):
+    * Kill process on port:
+      - macOS/Darwin: lsof -ti :<PORT> | xargs kill -9
+      - Linux: fuser -k <PORT>/tcp  OR  kill $(lsof -ti :<PORT>)
+    * Find process on port:
+      - macOS/Darwin: lsof -i :<PORT>
+      - Linux: ss -tlnp | grep :<PORT>  OR  netstat -tlnp | grep :<PORT>
   - Examples:
     * List files: {{"worker": "shell", "action": "execute_command", "args": {{"command": "ls -la"}}, "risk_level": "safe"}}
     * Check disk: {{"worker": "shell", "action": "execute_command", "args": {{"command": "df -h"}}, "risk_level": "safe"}}
     * Docker containers (FULL TABLE): {{"worker": "shell", "action": "execute_command", "args": {{"command": "docker ps"}}, "risk_level": "safe"}}
     * Docker details: {{"worker": "shell", "action": "execute_command", "args": {{"command": "docker inspect container_name"}}, "risk_level": "safe"}}
+    * Kill port 8000 (macOS): {{"worker": "shell", "action": "execute_command", "args": {{"command": "lsof -ti :8000 | xargs kill -9"}}, "risk_level": "high"}}
 
 - chat.respond: Provide analysis and human-readable explanations
   - args: {{"message": "your detailed analysis"}}
