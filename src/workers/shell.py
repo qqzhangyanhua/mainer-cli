@@ -91,6 +91,7 @@ class ShellWorker(BaseWorker):
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.DEVNULL,  # 禁用 stdin，避免等待用户输入
                 cwd=working_dir,
             )
 

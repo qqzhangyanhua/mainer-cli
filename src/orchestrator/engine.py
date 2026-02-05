@@ -19,7 +19,6 @@ from src.orchestrator.prompt import PromptBuilder
 from src.orchestrator.safety import check_safety
 from src.orchestrator.validation import validate_instruction
 from src.types import ConversationEntry, Instruction, RiskLevel, WorkerResult
-from src.orchestrator.deploy_flow import next_deploy_instruction
 from src.workers.audit import AuditWorker
 from src.workers.base import BaseWorker
 from src.workers.system import SystemWorker
@@ -116,7 +115,7 @@ class OrchestratorEngine:
         except ImportError:
             pass
 
-        # 注册 DeployWorker（需要 HttpWorker 和 ShellWorker）
+        # 注册 DeployWorker（需要 HttpWorker、ShellWorker 和 LLMClient）
         http_worker = self._workers.get("http")
         shell_worker = self._workers.get("shell")
         if http_worker and shell_worker:
@@ -128,7 +127,25 @@ class OrchestratorEngine:
                 if isinstance(http_worker, HttpWorkerType) and isinstance(
                     shell_worker, ShellWorkerType
                 ):
-                    self._workers["deploy"] = DeployWorker(http_worker, shell_worker)
+                    # 创建适配器：将 DeployWorker 的确认回调适配到 Engine 的确认回调
+                    deploy_confirmation_callback = None
+                    deploy_ask_user_callback = None
+
+                    if confirmation_callback is not None:
+                        deploy_confirmation_callback = self._create_deploy_confirmation_adapter(
+                            confirmation_callback
+                        )
+                        # ask_user_callback 需要从外部注入，先设为 None
+                        # DeployWorker 支持后续通过 set_ask_user_callback 注入
+
+                    self._workers["deploy"] = DeployWorker(
+                        http_worker,
+                        shell_worker,
+                        self._llm_client,  # 传递 LLM 客户端实现智能部署
+                        progress_callback,  # 传递进度回调
+                        deploy_confirmation_callback,  # 传递确认回调（适配器）
+                        deploy_ask_user_callback,  # 用户选择回调（后续注入）
+                    )
             except ImportError:
                 pass
 
@@ -161,6 +178,30 @@ class OrchestratorEngine:
             Worker 实例，不存在返回 None
         """
         return self._workers.get(name)
+
+    def _create_deploy_confirmation_adapter(
+        self,
+        confirmation_callback: Callable[[Instruction, RiskLevel], bool | Awaitable[bool]],
+    ) -> Callable[[str, str], Awaitable[bool]]:
+        """创建 DeployWorker 确认回调的适配器
+
+        将 DeployWorker 的 (action, detail) 格式转换为 Engine 的 (Instruction, RiskLevel) 格式
+        """
+
+        async def adapter(action: str, detail: str) -> bool:
+            # 创建一个虚拟的 Instruction 用于确认对话框
+            instruction = Instruction(
+                worker="deploy",
+                action="自主修复",
+                args={"operation": action, "detail": detail},
+                risk_level="medium",
+            )
+            result = confirmation_callback(instruction, "medium")
+            if inspect.isawaitable(result):
+                return await result
+            return bool(result)
+
+        return adapter
 
     def _get_list_command(self, target_type: str) -> str:
         """根据目标类型返回列表命令
@@ -509,7 +550,7 @@ class OrchestratorEngine:
                 )
                 # task_completed 默认为 False，循环会继续
             elif preprocessed.intent == "deploy":
-                # deploy 意图 - 使用确定性流程，避免重复抓取 README
+                # deploy 意图 - 直接使用一键部署，无需分步
                 repo_url = self._preprocessor.extract_repo_url(user_input)
                 if repo_url and self.get_worker("deploy"):
                     if self._progress_callback:
@@ -517,14 +558,13 @@ class OrchestratorEngine:
                             "preprocessing", f"🚀 Deploy intent detected for: {repo_url}"
                         )
 
-                    instruction, error = next_deploy_instruction(
-                        repo_url=repo_url,
-                        history=conversation_history,
-                        user_input=user_input,
-                        target_dir="~/projects",
+                    # 直接生成一键部署指令，不再使用分步流程
+                    instruction = Instruction(
+                        worker="deploy",
+                        action="deploy",
+                        args={"repo_url": repo_url, "target_dir": "~/projects"},
+                        risk_level="medium",
                     )
-                    if instruction is None:
-                        return f"Error: {error}"
                 else:
                     # 无法提取 URL 或缺少 deploy worker，回退到普通处理
                     if self._progress_callback:

@@ -13,7 +13,6 @@ from src.orchestrator.preprocessor import RequestPreprocessor
 from src.orchestrator.prompt import PromptBuilder
 from src.orchestrator.safety import check_safety
 from src.orchestrator.validation import validate_instruction
-from src.orchestrator.deploy_flow import next_deploy_instruction
 from src.types import ConversationEntry, Instruction, WorkerResult
 from src.workers.base import BaseWorker
 
@@ -320,21 +319,16 @@ class ReactNodes:
 
             self._report_progress("reasoning", f"✅ 需要上下文，先执行: {list_command}")
         elif preprocessed_dict.get("intent") == "deploy":
-            # 部署意图使用确定性流程，避免重复抓取 README
+            # 部署意图 - 直接使用一键部署
             repo_url = self._preprocessor.extract_repo_url(user_input)
             if repo_url and self._workers.get("deploy"):
-                instruction, error = next_deploy_instruction(
-                    repo_url=repo_url,
-                    history=history,
-                    user_input=user_input,
-                    target_dir="~/projects",
+                instruction = Instruction(
+                    worker="deploy",
+                    action="deploy",
+                    args={"repo_url": repo_url, "target_dir": "~/projects"},
+                    risk_level="medium",
                 )
-                if instruction is None:
-                    return {
-                        "is_error": True,
-                        "error_message": error,
-                    }
-                self._report_progress("reasoning", "✅ 生成部署指令")
+                self._report_progress("reasoning", "✅ 生成一键部署指令")
             elif repo_url:
                 # 缺少 deploy worker，回退到 LLM 部署 prompt
                 system_prompt = self._prompt_builder.build_deploy_prompt(

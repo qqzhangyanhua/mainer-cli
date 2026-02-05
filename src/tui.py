@@ -129,7 +129,7 @@ class ConfirmationScreen(ModalScreen[bool]):
             if has_args:
                 args_json = json.dumps(self._instruction.args, ensure_ascii=False, indent=2)
                 syntax = Syntax(args_json, "json", theme="ansi_dark", word_wrap=True)
-                yield Static(syntax, id="confirm-args", classes="hidden", can_focus=False)
+                yield Static(syntax, id="confirm-args", classes="hidden")
             with Horizontal(id="confirm-buttons"):
                 if has_args:
                     yield Button("展开参数", id="toggle-args")
@@ -167,13 +167,157 @@ class ConfirmationScreen(ModalScreen[bool]):
         self._args_visible = not self._args_visible
         if self._args_visible:
             args_widget.remove_class("hidden")
-            args_widget.can_focus = True
             toggle_button.label = "收起参数"
-            args_widget.focus()
         else:
             args_widget.add_class("hidden")
-            args_widget.can_focus = False
             toggle_button.label = "展开参数"
+
+
+class UserChoiceScreen(ModalScreen[str]):
+    """用户选择弹窗"""
+
+    CSS = """
+    UserChoiceScreen {
+        align: center middle;
+    }
+
+    #choice-dialog {
+        width: 70%;
+        max-width: 80;
+        border: heavy $primary;
+        padding: 1 2;
+        background: $surface;
+    }
+
+    #choice-title {
+        text-style: bold;
+        color: $primary;
+        margin-bottom: 1;
+    }
+
+    #choice-context {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+
+    #choice-options {
+        height: auto;
+        margin: 1 0;
+    }
+
+    .choice-button {
+        width: 100%;
+        margin: 0 0 1 0;
+    }
+
+    .choice-button:focus {
+        background: $primary;
+    }
+
+    #choice-custom-input {
+        width: 100%;
+        margin: 1 0;
+    }
+
+    #choice-custom-input.hidden {
+        display: none;
+    }
+
+    #choice-hint {
+        color: $text-muted;
+        margin-top: 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("1", "select_1", "Option 1", show=False),
+        Binding("2", "select_2", "Option 2", show=False),
+        Binding("3", "select_3", "Option 3", show=False),
+        Binding("4", "select_4", "Option 4", show=False),
+    ]
+
+    def __init__(self, question: str, options: list[str], context: str) -> None:
+        super().__init__()
+        self._question = question
+        self._options = options
+        self._context = context
+        self._custom_input_visible = False
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="choice-dialog"):
+            yield Static(f"[bold]{self._question}[/bold]", id="choice-title")
+            if self._context:
+                yield Static(self._context, id="choice-context")
+            with Vertical(id="choice-options"):
+                for i, option in enumerate(self._options, 1):
+                    btn_id = f"choice-btn-{i}"
+                    label = f"[{i}] {option}"
+                    if i == 1:
+                        label += " (推荐)"
+                    yield Button(label, id=btn_id, classes="choice-button")
+            yield Input(placeholder="输入自定义值...", id="choice-custom-input", classes="hidden")
+            yield Static("快捷键: 数字键选择，Esc 取消", id="choice-hint")
+
+    def on_mount(self) -> None:
+        """默认聚焦第一个按钮"""
+        buttons = self.query(".choice-button")
+        if buttons:
+            buttons.first().focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        btn_id = event.button.id or ""
+        if btn_id.startswith("choice-btn-"):
+            try:
+                index = int(btn_id.split("-")[-1]) - 1
+                if 0 <= index < len(self._options):
+                    selected = self._options[index]
+                    # 检查是否是"自定义"选项
+                    if selected.lower() in ("自定义", "custom", "其他", "other"):
+                        self._show_custom_input()
+                    else:
+                        self.dismiss(selected)
+            except ValueError:
+                pass
+
+    def _show_custom_input(self) -> None:
+        """显示自定义输入框"""
+        custom_input = self.query_one("#choice-custom-input", Input)
+        custom_input.remove_class("hidden")
+        custom_input.focus()
+        self._custom_input_visible = True
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """处理自定义输入提交"""
+        if event.input.id == "choice-custom-input":
+            value = event.value.strip()
+            if value:
+                self.dismiss(value)
+
+    def action_cancel(self) -> None:
+        """取消选择，返回空字符串"""
+        self.dismiss("")
+
+    def action_select_1(self) -> None:
+        self._select_by_index(0)
+
+    def action_select_2(self) -> None:
+        self._select_by_index(1)
+
+    def action_select_3(self) -> None:
+        self._select_by_index(2)
+
+    def action_select_4(self) -> None:
+        self._select_by_index(3)
+
+    def _select_by_index(self, index: int) -> None:
+        """通过索引选择选项"""
+        if 0 <= index < len(self._options):
+            selected = self._options[index]
+            if selected.lower() in ("自定义", "custom", "其他", "other"):
+                self._show_custom_input()
+            else:
+                self.dismiss(selected)
 
 
 class OpsAIApp(App[str]):
@@ -315,6 +459,17 @@ class OpsAIApp(App[str]):
             progress_callback=self._on_progress,
             use_langgraph=True,
         )
+
+        # 注入回调到 DeployWorker
+        deploy_worker = self._engine.get_worker("deploy")
+        if deploy_worker is not None:
+            # 注入用户选择回调
+            if hasattr(deploy_worker, "set_ask_user_callback"):
+                deploy_worker.set_ask_user_callback(self._ask_user_choice)
+            # 注入确认回调（用于删除容器等破坏性操作）
+            if hasattr(deploy_worker, "set_confirmation_callback"):
+                deploy_worker.set_confirmation_callback(self._deploy_confirmation_adapter)
+
         self._scenario_manager = ScenarioManager()
         self._current_task: asyncio.Task | None = None
         self._awaiting_confirmation: bool = False
@@ -439,12 +594,68 @@ class OpsAIApp(App[str]):
             if not future.done():
                 future.set_result(bool(result))
 
-        self.push_screen(ConfirmationScreen(instruction, risk), _on_dismissed)
+        # 使用 call_later 确保在 Textual 事件循环中执行 push_screen
+        self.call_later(
+            lambda: self.push_screen(ConfirmationScreen(instruction, risk), _on_dismissed)
+        )
 
         try:
             return await future
         finally:
             self._awaiting_confirmation = False
+            input_widget.disabled = False
+            input_widget.focus()
+
+    async def _deploy_confirmation_adapter(self, action: str, detail: str) -> bool:
+        """DeployWorker 专用的确认回调适配器
+
+        将 (action, detail) 格式转换为 ConfirmationScreen 可用的 Instruction 格式
+
+        Args:
+            action: 操作描述（如 "执行命令"、"编辑文件"）
+            detail: 详细信息（如具体命令或文件内容）
+
+        Returns:
+            用户是否确认
+        """
+        # 创建一个虚拟的 Instruction 用于显示确认对话框
+        instruction = Instruction(
+            worker="deploy",
+            action=action,
+            args={"command": detail},
+            risk_level="medium",
+        )
+        return await self._request_confirmation(instruction, "medium")
+
+    async def _ask_user_choice(self, question: str, options: list[str], context: str) -> str:
+        """询问用户选择（异步弹窗）
+
+        Args:
+            question: 问题描述
+            options: 选项列表
+            context: 上下文说明
+
+        Returns:
+            用户选择的选项，取消时返回空字符串
+        """
+        input_widget = self.query_one("#user-input", Input)
+        input_widget.disabled = True
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[str] = loop.create_future()
+
+        def _on_dismissed(result: str | None) -> None:
+            if not future.done():
+                future.set_result(result or "")
+
+        # 使用 call_later 确保在 Textual 事件循环中执行 push_screen
+        self.call_later(
+            lambda: self.push_screen(UserChoiceScreen(question, options, context), _on_dismissed)
+        )
+
+        try:
+            return await future
+        finally:
             input_widget.disabled = False
             input_widget.focus()
 
@@ -463,8 +674,8 @@ class OpsAIApp(App[str]):
         if not self._verbose_enabled:
             return
 
-        # 其他步骤正常显示
-        history.write(f"[dim]{message}[/dim]")
+        # 显示执行中标识
+        history.write(f"[dim]⏳ {message}[/dim]")
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """处理输入提交"""

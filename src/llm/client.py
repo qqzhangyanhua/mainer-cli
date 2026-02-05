@@ -120,7 +120,7 @@ class LLMClient:
         Returns:
             解析后的字典，解析失败返回 None
         """
-        # 尝试提取 Markdown JSON 代码块
+        # 尝试提取 Markdown JSON 代码块（支持多种格式）
         json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", response, re.DOTALL)
         if json_match:
             json_str = json_match.group(1).strip()
@@ -154,6 +154,30 @@ class LLMClient:
         if start_idx != -1 and end_idx != -1:
             try:
                 fixed_json = json_str[start_idx:end_idx]
+                result = json.loads(fixed_json)
+                return result
+            except json.JSONDecodeError:
+                pass
+
+        # 2. 尝试从原始响应中提取（不仅仅是代码块）
+        brace_count = 0
+        start_idx = -1
+        end_idx = -1
+
+        for i, char in enumerate(response):
+            if char == "{":
+                if start_idx == -1:
+                    start_idx = i
+                brace_count += 1
+            elif char == "}":
+                brace_count -= 1
+                if brace_count == 0 and start_idx != -1:
+                    end_idx = i + 1
+                    break
+
+        if start_idx != -1 and end_idx != -1:
+            try:
+                fixed_json = response[start_idx:end_idx]
                 result = json.loads(fixed_json)
                 return result
             except json.JSONDecodeError:
