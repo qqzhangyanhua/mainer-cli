@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -19,6 +20,9 @@ class SystemWorker(BaseWorker):
     - find_large_files: 查找大文件
     - check_disk_usage: 检查磁盘使用情况
     - delete_files: 删除文件
+    - write_file: 创建或覆写文件
+    - append_to_file: 追加内容到文件
+    - replace_in_file: 查找替换文件内容
     """
 
     @property
@@ -26,7 +30,15 @@ class SystemWorker(BaseWorker):
         return "system"
 
     def get_capabilities(self) -> list[str]:
-        return ["list_files", "find_large_files", "check_disk_usage", "delete_files"]
+        return [
+            "list_files",
+            "find_large_files",
+            "check_disk_usage",
+            "delete_files",
+            "write_file",
+            "append_to_file",
+            "replace_in_file",
+        ]
 
     async def execute(
         self,
@@ -47,6 +59,9 @@ class SystemWorker(BaseWorker):
             "find_large_files": self._find_large_files,
             "check_disk_usage": self._check_disk_usage,
             "delete_files": self._delete_files,
+            "write_file": self._write_file,
+            "append_to_file": self._append_to_file,
+            "replace_in_file": self._replace_in_file,
         }
 
         handler = handlers.get(action)
@@ -214,7 +229,17 @@ class SystemWorker(BaseWorker):
         """
         files = args.get("files", [])
         if not isinstance(files, list):
-            return WorkerResult(success=False, message="files must be a list")
+            # 兼容单个字符串参数
+            if isinstance(files, str):
+                files = [files]
+            else:
+                return WorkerResult(success=False, message="files must be a list")
+
+        # 兼容：LLM 可能传了 "path" 而非 "files"
+        if len(files) == 0:
+            path_arg = args.get("path")
+            if isinstance(path_arg, str) and path_arg:
+                files = [path_arg]
 
         if len(files) == 0:
             return WorkerResult(success=False, message="files list cannot be empty")
@@ -266,3 +291,247 @@ class SystemWorker(BaseWorker):
             message=", ".join(message_parts) if message_parts else "No files to delete",
             task_completed=success,
         )
+
+    async def _write_file(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """创建或覆写文件
+
+        Args:
+            args: 包含 path（文件路径）和 content（文件内容）
+            dry_run: 是否为模拟执行
+        """
+        path_str = args.get("path")
+        if not isinstance(path_str, str):
+            return WorkerResult(
+                success=False,
+                message="path parameter is required and must be a string",
+            )
+
+        content = args.get("content")
+        if not isinstance(content, str):
+            return WorkerResult(
+                success=False,
+                message="content parameter is required and must be a string",
+            )
+
+        path = Path(path_str)
+
+        # 路径是目录
+        if path.is_dir():
+            return WorkerResult(success=False, message=f"Path is a directory: {path}")
+
+        # 父目录不存在
+        if not path.parent.exists():
+            return WorkerResult(
+                success=False,
+                message=f"Parent directory does not exist: {path.parent}",
+            )
+
+        if dry_run:
+            preview = content[:200] + ("..." if len(content) > 200 else "")
+            return WorkerResult(
+                success=True,
+                message=(
+                    f"[DRY-RUN] Would write {len(content)} chars to {path}\n"
+                    f"Content preview:\n{preview}"
+                ),
+                simulated=True,
+            )
+
+        try:
+            path.write_text(content, encoding="utf-8")
+            return WorkerResult(
+                success=True,
+                data=cast(
+                    dict[str, Union[str, int, bool]],
+                    {"path": str(path), "size": len(content)},
+                ),
+                message=f"Successfully wrote {len(content)} chars to {path}",
+                task_completed=True,
+            )
+        except PermissionError:
+            return WorkerResult(success=False, message=f"Permission denied: {path}")
+        except OSError as e:
+            return WorkerResult(success=False, message=f"Error writing file: {e!s}")
+
+    async def _append_to_file(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """追加内容到文件
+
+        Args:
+            args: 包含 path（文件路径）和 content（追加的内容）
+            dry_run: 是否为模拟执行
+        """
+        path_str = args.get("path")
+        if not isinstance(path_str, str):
+            return WorkerResult(
+                success=False,
+                message="path parameter is required and must be a string",
+            )
+
+        content = args.get("content")
+        if not isinstance(content, str):
+            return WorkerResult(
+                success=False,
+                message="content parameter is required and must be a string",
+            )
+
+        path = Path(path_str)
+
+        # 文件必须已存在
+        if not path.exists():
+            return WorkerResult(success=False, message=f"File not found: {path}")
+
+        if not path.is_file():
+            return WorkerResult(success=False, message=f"Path is not a file: {path}")
+
+        if dry_run:
+            preview = content[:200] + ("..." if len(content) > 200 else "")
+            return WorkerResult(
+                success=True,
+                message=(
+                    f"[DRY-RUN] Would append {len(content)} chars to {path}\n"
+                    f"Content to append:\n{preview}"
+                ),
+                simulated=True,
+            )
+
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(content)
+            return WorkerResult(
+                success=True,
+                data=cast(
+                    dict[str, Union[str, int, bool]],
+                    {"path": str(path), "appended_size": len(content)},
+                ),
+                message=f"Successfully appended {len(content)} chars to {path}",
+                task_completed=True,
+            )
+        except PermissionError:
+            return WorkerResult(success=False, message=f"Permission denied: {path}")
+        except OSError as e:
+            return WorkerResult(success=False, message=f"Error appending to file: {e!s}")
+
+    async def _replace_in_file(
+        self,
+        args: dict[str, ArgValue],
+        dry_run: bool = False,
+    ) -> WorkerResult:
+        """查找替换文件内容
+
+        Args:
+            args: 包含 path、old、new，可选 regex（bool）和 count（int）
+            dry_run: 是否为模拟执行
+        """
+        path_str = args.get("path")
+        if not isinstance(path_str, str):
+            return WorkerResult(
+                success=False,
+                message="path parameter is required and must be a string",
+            )
+
+        old = args.get("old")
+        if not isinstance(old, str):
+            return WorkerResult(
+                success=False,
+                message="old parameter is required and must be a string",
+            )
+
+        new = args.get("new")
+        if not isinstance(new, str):
+            return WorkerResult(
+                success=False,
+                message="new parameter is required and must be a string",
+            )
+
+        use_regex = args.get("regex", False)
+        if isinstance(use_regex, str):
+            use_regex = use_regex.lower() == "true"
+
+        max_count = args.get("count")
+        if max_count is not None and not isinstance(max_count, int):
+            return WorkerResult(success=False, message="count must be an integer")
+
+        path = Path(path_str)
+
+        # 文件必须存在
+        if not path.exists():
+            return WorkerResult(success=False, message=f"File not found: {path}")
+
+        if not path.is_file():
+            return WorkerResult(success=False, message=f"Path is not a file: {path}")
+
+        # 读取文件内容
+        try:
+            file_content = path.read_text(encoding="utf-8")
+        except PermissionError:
+            return WorkerResult(success=False, message=f"Permission denied: {path}")
+        except OSError as e:
+            return WorkerResult(success=False, message=f"Error reading file: {e!s}")
+
+        # 计算匹配数量并执行替换
+        if use_regex:
+            try:
+                pattern = re.compile(old)
+            except re.error as e:
+                return WorkerResult(success=False, message=f"Invalid regex pattern: {e!s}")
+
+            match_count = len(pattern.findall(file_content))
+        else:
+            match_count = file_content.count(old)
+
+        if match_count == 0:
+            return WorkerResult(
+                success=True,
+                message=f"No matches found for '{old}'",
+                task_completed=True,
+            )
+
+        effective_count = min(match_count, max_count) if max_count else match_count
+
+        if dry_run:
+            return WorkerResult(
+                success=True,
+                message=(
+                    f"[DRY-RUN] Would replace in {path}\n"
+                    f'  "{old}" → "{new}"\n'
+                    f"  Matches found: {match_count}, would replace: {effective_count}"
+                ),
+                simulated=True,
+            )
+
+        # 执行替换
+        if use_regex:
+            count_arg = max_count if max_count else 0  # re.sub: count=0 表示全部
+            new_content, actual_count = re.subn(old, new, file_content, count=count_arg)
+        else:
+            if max_count:
+                new_content = file_content.replace(old, new, max_count)
+                actual_count = min(match_count, max_count)
+            else:
+                new_content = file_content.replace(old, new)
+                actual_count = match_count
+
+        # 写回文件
+        try:
+            path.write_text(new_content, encoding="utf-8")
+            return WorkerResult(
+                success=True,
+                data=cast(
+                    dict[str, Union[str, int, bool]],
+                    {"path": str(path), "replacements": actual_count},
+                ),
+                message=f"Replaced {actual_count} occurrence(s) in {path}",
+                task_completed=True,
+            )
+        except PermissionError:
+            return WorkerResult(success=False, message=f"Permission denied: {path}")
+        except OSError as e:
+            return WorkerResult(success=False, message=f"Error writing file: {e!s}")

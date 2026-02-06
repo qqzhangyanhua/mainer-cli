@@ -19,7 +19,15 @@ class PromptBuilder:
     WORKER_CAPABILITIES: dict[str, list[str]] = {
         "chat": ["respond"],
         "shell": ["execute_command"],
-        "system": ["list_files", "find_large_files", "check_disk_usage", "delete_files"],
+        "system": [
+            "list_files",
+            "find_large_files",
+            "check_disk_usage",
+            "delete_files",
+            "write_file",
+            "append_to_file",
+            "replace_in_file",
+        ],
         "container": [
             "list_containers",
             "inspect_container",
@@ -115,7 +123,41 @@ Worker Details:
   - risk_level: medium
   - 示例: {{"worker": "deploy", "action": "deploy", "args": {{"repo_url": "https://github.com/user/app"}}, "risk_level": "medium"}}
 
-- system/container: Avoid these - use shell commands instead
+- system.delete_files: Delete one or more files
+  - args: {{"files": ["path1", "path2", ...]}}
+  - ⚠️ "files" MUST be a list of strings, even for a single file!
+  - risk_level: high
+  - Same PATH EXTRACTION RULES as write_file below
+  - Example: {{"worker": "system", "action": "delete_files", "args": {{"files": [".test.env"]}}, "risk_level": "high"}}
+
+- system.write_file: Create or overwrite a file
+  - args: {{"path": "string", "content": "string"}}
+  - risk_level: medium (new file), high (overwrite existing)
+  - ⚠️ PATH EXTRACTION RULES:
+    * "path" MUST be a valid filesystem path (e.g. ".env", "config/app.yaml", "/tmp/test.txt")
+    * NEVER include Chinese text or natural language descriptions in "path"!
+    * Extract ONLY the actual filename/path from user input:
+      - "新建一个.env文件" → path = ".env" (NOT "新建一个.env文件")
+      - "在当前目录创建config.yaml" → path = "config.yaml"
+      - "帮我建一个，.map-env文件" → path = ".map-env"
+      - "在/tmp下创建test.txt" → path = "/tmp/test.txt"
+    * If user specifies a directory like "在config目录下", prepend it: path = "config/filename"
+    * Default to current directory if no directory specified
+  - Example: {{"worker": "system", "action": "write_file", "args": {{"path": ".env", "content": "TOKEN=xxxx"}}, "risk_level": "medium"}}
+
+- system.append_to_file: Append content to existing file
+  - args: {{"path": "string", "content": "string"}}
+  - risk_level: medium
+  - Same PATH EXTRACTION RULES as write_file above
+  - Example: {{"worker": "system", "action": "append_to_file", "args": {{"path": ".env", "content": "\\nAPI_KEY=zzzz"}}, "risk_level": "medium"}}
+
+- system.replace_in_file: Find and replace text in file
+  - args: {{"path": "string", "old": "string", "new": "string", "regex": bool (optional, default false), "count": int (optional)}}
+  - risk_level: high
+  - Same PATH EXTRACTION RULES as write_file above
+  - Example: {{"worker": "system", "action": "replace_in_file", "args": {{"path": ".env", "old": "TOKEN=xxxx", "new": "TOKEN=yyyy"}}, "risk_level": "high"}}
+
+- system/container: Avoid these for listing/monitoring - use shell commands instead
 
 CRITICAL Rules:
 1. ⭐⭐⭐ INTENT PRIORITY (意图优先级 - 最重要!!!):
@@ -151,6 +193,24 @@ Step 1: {{"worker": "analyze", "action": "explain", "args": {{"target": "compode
 
 User: "8080 端口是什么服务"
 Step 1: {{"worker": "analyze", "action": "explain", "args": {{"target": "8080", "type": "port"}}, "risk_level": "safe"}}
+
+User: "新建一个.env文件写入TOKEN=xxxx"
+Step 1: {{"worker": "system", "action": "write_file", "args": {{"path": ".env", "content": "TOKEN=xxxx"}}, "risk_level": "medium"}}
+
+User: "帮我建一个，.map-env文件"
+Step 1: {{"worker": "system", "action": "write_file", "args": {{"path": ".map-env", "content": ""}}, "risk_level": "medium"}}
+
+User: "在当前目录下创建config.yaml"
+Step 1: {{"worker": "system", "action": "write_file", "args": {{"path": "config.yaml", "content": ""}}, "risk_level": "medium"}}
+
+User: "把.env的TOKEN换成yyyy"
+Step 1: {{"worker": "system", "action": "replace_in_file", "args": {{"path": ".env", "old": "TOKEN=xxxx", "new": "TOKEN=yyyy"}}, "risk_level": "high"}}
+
+User: "在.env增加API_KEY=zzzz"
+Step 1: {{"worker": "system", "action": "append_to_file", "args": {{"path": ".env", "content": "\\nAPI_KEY=zzzz"}}, "risk_level": "medium"}}
+
+User: "删除.test.env文件"
+Step 1: {{"worker": "system", "action": "delete_files", "args": {{"files": [".test.env"]}}, "risk_level": "high"}}
 
 Output format:
 {{"worker": "...", "action": "...", "args": {{...}}, "risk_level": "safe|medium|high"}}
