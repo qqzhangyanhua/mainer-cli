@@ -33,6 +33,7 @@ class PromptBuilder:
         "analyze": ["explain"],
         "http": ["fetch_url", "fetch_github_readme", "list_github_files"],
         "deploy": ["deploy"],  # 简化：只暴露一键部署
+        "git": ["clone", "pull", "status"],  # Git 操作（显式路径优先）
     }
 
     def get_worker_capabilities(

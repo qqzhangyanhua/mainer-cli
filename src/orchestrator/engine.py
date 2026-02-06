@@ -115,6 +115,14 @@ class OrchestratorEngine:
         except ImportError:
             pass
 
+        # 注册 GitWorker
+        try:
+            from src.workers.git import GitWorker
+
+            self._workers["git"] = GitWorker()
+        except ImportError:
+            pass
+
         # 注册 DeployWorker（需要 HttpWorker、ShellWorker 和 LLMClient）
         http_worker = self._workers.get("http")
         shell_worker = self._workers.get("shell")
