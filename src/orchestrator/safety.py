@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
+from src.orchestrator.command_whitelist import check_command_safety
 from src.types import Instruction, RiskLevel
 
-# 危险模式定义
+# 危险模式定义（用于非 shell 命令的通用检查）
 DANGER_PATTERNS: dict[str, list[str]] = {
     "high": [
         "rm -rf",
         "kill -9",
-        "mkfs",  # 磁盘格式化（移除通用的 "format"）
+        "mkfs",  # 磁盘格式化
         "dd if=",
         "> /dev/",
         ":(){:|:&};:",  # Fork bomb
         "chmod -R 777",
         "chown -R",
         "delete_files",  # SystemWorker 删除文件操作
+        "replace_in_file",  # SystemWorker 文件替换操作
     ],
     "medium": [
         "rm ",
@@ -28,6 +30,8 @@ DANGER_PATTERNS: dict[str, list[str]] = {
         "shutdown",
         "restart",  # 容器重启
         "stop",  # 容器停止
+        "write_file",  # SystemWorker 写入文件
+        "append_to_file",  # SystemWorker 追加内容
     ],
 }
 
@@ -43,7 +47,16 @@ def check_safety(instruction: Instruction) -> RiskLevel:
     Returns:
         RiskLevel: safe | medium | high
     """
-    # 将指令转换为可检查的文本
+    # 对 Shell 命令使用白名单精确检查
+    if instruction.worker == "shell" and instruction.action == "execute_command":
+        command = instruction.args.get("command", "")
+        if isinstance(command, str) and command:
+            result = check_command_safety(command)
+            if not result.allowed:
+                return "high"  # 不在白名单的命令视为高风险
+            return result.risk_level
+
+    # 其他 Worker 使用模式匹配检查
     command_text = _instruction_to_text(instruction)
 
     # 按风险等级从高到低检查

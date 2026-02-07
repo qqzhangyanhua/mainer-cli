@@ -38,17 +38,55 @@ class TestShellWorker:
 
     @pytest.mark.asyncio
     async def test_execute_command_dry_run(self) -> None:
-        """测试 dry-run 模式"""
+        """测试 dry-run 模式（使用白名单内的命令）"""
+        worker = ShellWorker()
+        result = await worker.execute(
+            "execute_command",
+            {"command": "ls -la /tmp", "dry_run": True},
+        )
+
+        assert result.success is True
+        assert result.simulated is True
+        assert "[DRY-RUN]" in result.message
+        assert "ls -la /tmp" in result.message
+
+    @pytest.mark.asyncio
+    async def test_dangerous_command_blocked(self) -> None:
+        """测试危险命令被阻止"""
         worker = ShellWorker()
         result = await worker.execute(
             "execute_command",
             {"command": "rm -rf /", "dry_run": True},
         )
 
-        assert result.success is True
-        assert result.simulated is True
-        assert "[DRY-RUN]" in result.message
-        assert "rm -rf /" in result.message
+        assert result.success is False
+        assert "blocked" in result.message.lower()
+        assert result.data is not None
+        assert result.data.get("blocked") is True
+
+    @pytest.mark.asyncio
+    async def test_command_not_in_whitelist_blocked(self) -> None:
+        """测试不在白名单内的命令被阻止"""
+        worker = ShellWorker()
+        result = await worker.execute(
+            "execute_command",
+            {"command": "my-custom-script.sh"},
+        )
+
+        assert result.success is False
+        assert "not in whitelist" in result.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_command_chaining_blocked(self) -> None:
+        """测试命令链接被阻止"""
+        worker = ShellWorker()
+        result = await worker.execute(
+            "execute_command",
+            {"command": "ls && rm -rf /"},
+        )
+
+        assert result.success is False
+        assert "&&" in result.message or "dangerous" in result.message.lower()
 
     @pytest.mark.asyncio
     async def test_unknown_action(self) -> None:

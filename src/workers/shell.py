@@ -1,4 +1,4 @@
-"""Shell 命令执行 Worker"""
+"""Shell 命令执行 Worker - 白名单化安全执行"""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import asyncio
 import os
 from typing import Tuple, Union, cast
 
+from src.orchestrator.command_whitelist import check_command_safety
 from src.types import ArgValue, WorkerResult
 from src.workers.base import BaseWorker
 
@@ -16,10 +17,16 @@ TRUNCATE_TAIL = 2000
 
 
 class ShellWorker(BaseWorker):
-    """Shell 命令执行 Worker
+    """Shell 命令执行 Worker（白名单模式）
 
     支持的操作:
-    - execute_command: 执行 shell 命令
+    - execute_command: 执行白名单内的 shell 命令
+
+    安全机制:
+    - 只允许执行预定义白名单内的命令
+    - 禁止命令链接（&&, ||, ;）和危险重定向
+    - 管道只允许接安全的文本处理命令
+    - 某些命令禁止特定危险参数（如 rm -rf）
     """
 
     @property
@@ -78,14 +85,25 @@ class ShellWorker(BaseWorker):
                 message="working_dir must be a string",
             )
 
-        if dry_run:
+        # 白名单安全检查
+        check_result = check_command_safety(command)
+        if not check_result.allowed:
             return WorkerResult(
-                success=True,
-                message=f"[DRY-RUN] Would execute: {command} (cwd: {working_dir})",
-                simulated=True,
+                success=False,
+                message=f"Command blocked: {check_result.reason}",
+                data={"blocked": True, "command": command, "reason": check_result.reason},
             )
 
-        # 执行命令
+        if dry_run:
+            risk_info = f" [risk: {check_result.risk_level}]"
+            return WorkerResult(
+                success=True,
+                message=f"[DRY-RUN] Would execute: {command} (cwd: {working_dir}){risk_info}",
+                simulated=True,
+                data={"risk_level": check_result.risk_level, "reason": check_result.reason},
+            )
+
+        # 执行命令（已通过白名单检查）
         try:
             process = await asyncio.create_subprocess_shell(
                 command,
