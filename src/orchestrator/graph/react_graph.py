@@ -12,13 +12,16 @@ from src.llm.client import LLMClient
 from src.orchestrator.graph.checkpoint import get_checkpoint_saver
 from src.orchestrator.graph.react_nodes import ReactNodes
 from src.orchestrator.graph.react_state import ReactState
+from src.types import RiskLevel
 from src.workers.base import BaseWorker
 
 
 def route_after_safety(
     state: ReactState,
-) -> Literal["approve", "execute"]:
+) -> Literal["approve", "execute", "error"]:
     """安全检查后的路由决策"""
+    if state.get("is_error", False):
+        return "error"
     if state.get("needs_approval", False):
         return "approve"
     return "execute"
@@ -57,6 +60,9 @@ class ReactGraph:
         workers: dict[str, BaseWorker],
         context: EnvironmentContext,
         dry_run: bool = False,
+        max_risk: RiskLevel = "high",
+        auto_approve_safe: bool = True,
+        require_dry_run_for_high_risk: bool = True,
         enable_checkpoints: bool = True,
         enable_interrupts: bool = True,
         use_sqlite: bool = False,
@@ -70,6 +76,9 @@ class ReactGraph:
             workers: Worker 实例字典
             context: 环境上下文
             dry_run: 是否启用 dry-run 模式
+            max_risk: 最大允许风险等级
+            auto_approve_safe: safe 操作是否自动通过
+            require_dry_run_for_high_risk: 高风险操作是否强制 dry-run
             enable_checkpoints: 是否启用状态持久化
             enable_interrupts: 是否启用 interrupt 机制（用于人工确认）
             use_sqlite: 是否使用 SQLite 持久化（默认使用内存存储）
@@ -88,6 +97,9 @@ class ReactGraph:
             workers=workers,
             context=context,
             dry_run=dry_run,
+            max_risk=max_risk,
+            auto_approve_safe=auto_approve_safe,
+            require_dry_run_for_high_risk=require_dry_run_for_high_risk,
             progress_callback=progress_callback,
         )
 
@@ -130,6 +142,7 @@ class ReactGraph:
             {
                 "approve": "approve",
                 "execute": "execute",
+                "error": "error",
             },
         )
 

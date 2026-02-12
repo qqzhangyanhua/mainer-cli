@@ -106,3 +106,93 @@ class TestOrchestratorEngine:
 
                 # 应该在最大迭代后停止
                 assert mock_generate.call_count == 5  # 默认 max_iterations
+
+    @pytest.mark.asyncio
+    async def test_cli_mode_allows_medium_when_configured(self) -> None:
+        """测试 CLI 模式在配置允许时执行中风险操作"""
+        config = OpsAIConfig()
+        config.safety.cli_max_risk = "medium"
+        engine = OrchestratorEngine(config)
+
+        mock_llm_response = (
+            '{"worker": "system", "action": "write_file", '
+            '"args": {"path": "a.txt", "content": "x"}, "risk_level": "medium"}'
+        )
+
+        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
+            mock_generate.return_value = mock_llm_response
+
+            with patch.object(
+                engine, "execute_instruction", new_callable=AsyncMock
+            ) as mock_execute:
+                mock_execute.return_value = WorkerResult(
+                    success=True,
+                    message="ok",
+                    task_completed=True,
+                )
+
+                result = await engine.react_loop("写入文件")
+
+                assert result == "ok"
+                mock_execute.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cli_mode_blocks_medium_by_max_risk(self) -> None:
+        """测试 CLI 模式在 max_risk=safe 时阻断中风险操作"""
+        config = OpsAIConfig()
+        config.safety.cli_max_risk = "safe"
+        engine = OrchestratorEngine(config)
+
+        mock_llm_response = (
+            '{"worker": "system", "action": "write_file", '
+            '"args": {"path": "a.txt", "content": "x"}, "risk_level": "medium"}'
+        )
+
+        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
+            mock_generate.return_value = mock_llm_response
+
+            result = await engine.react_loop("写入文件")
+
+            assert "exceeds configured max risk" in result
+
+    @pytest.mark.asyncio
+    async def test_cli_high_risk_requires_dry_run(self) -> None:
+        """测试 CLI 高危操作要求先 dry-run"""
+        config = OpsAIConfig()
+        config.safety.cli_max_risk = "high"
+        config.safety.require_dry_run_for_high_risk = True
+        engine = OrchestratorEngine(config)
+
+        mock_llm_response = (
+            '{"worker": "system", "action": "delete_files", '
+            '"args": {"files": ["a.txt"]}, "risk_level": "high"}'
+        )
+
+        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
+            mock_generate.return_value = mock_llm_response
+
+            result = await engine.react_loop("删除文件")
+
+            assert "requires dry-run first" in result
+
+    @pytest.mark.asyncio
+    async def test_safe_operation_requires_confirmation_when_auto_approve_disabled(self) -> None:
+        """测试 auto_approve_safe=false 时 safe 操作也需要确认"""
+        config = OpsAIConfig()
+        config.safety.auto_approve_safe = False
+
+        callback = AsyncMock(return_value=False)
+        engine = OrchestratorEngine(config, confirmation_callback=callback)
+
+        mock_llm_response = (
+            '{"worker": "system", "action": "check_disk_usage", '
+            '"args": {"path": "/"}, "risk_level": "safe"}'
+        )
+
+        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
+            mock_generate.return_value = mock_llm_response
+
+            result = await engine.react_loop("检查磁盘")
+
+            assert result == "Operation cancelled by user"
+            callback.assert_called_once()

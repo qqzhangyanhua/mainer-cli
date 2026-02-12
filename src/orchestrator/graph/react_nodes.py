@@ -13,7 +13,7 @@ from src.orchestrator.preprocessor import RequestPreprocessor
 from src.orchestrator.prompt import PromptBuilder
 from src.orchestrator.safety import check_safety
 from src.orchestrator.validation import validate_instruction
-from src.types import ConversationEntry, Instruction, WorkerResult
+from src.types import ConversationEntry, Instruction, RiskLevel, WorkerResult
 from src.workers.base import BaseWorker
 
 
@@ -29,6 +29,9 @@ class ReactNodes:
         workers: dict[str, BaseWorker],
         context: EnvironmentContext,
         dry_run: bool = False,
+        max_risk: RiskLevel = "high",
+        auto_approve_safe: bool = True,
+        require_dry_run_for_high_risk: bool = True,
         progress_callback: Optional[Callable[[str, str], None]] = None,
     ) -> None:
         """初始化节点
@@ -38,16 +41,31 @@ class ReactNodes:
             workers: Worker 实例字典
             context: 环境上下文
             dry_run: 是否启用 dry-run 模式
+            max_risk: 最大允许风险等级
+            auto_approve_safe: safe 操作是否自动通过
+            require_dry_run_for_high_risk: 高风险操作是否强制 dry-run
             progress_callback: 进度回调函数
         """
         self._llm = llm_client
         self._workers = workers
         self._context = context
         self._dry_run = dry_run
+        self._max_risk = max_risk
+        self._auto_approve_safe = auto_approve_safe
+        self._require_dry_run_for_high_risk = require_dry_run_for_high_risk
         self._progress_callback = progress_callback
 
         self._preprocessor = RequestPreprocessor()
         self._prompt_builder = PromptBuilder()
+
+    @staticmethod
+    def _risk_rank(risk: RiskLevel) -> int:
+        ranks: dict[RiskLevel, int] = {
+            "safe": 0,
+            "medium": 1,
+            "high": 2,
+        }
+        return ranks[risk]
 
     def _report_progress(self, step: str, message: str) -> None:
         """报告进度"""
@@ -413,6 +431,7 @@ class ReactNodes:
             action=str(inst_dict.get("action", "")),
             args=inst_dict.get("args", {}),  # type: ignore[arg-type]
             risk_level=inst_dict.get("risk_level", "safe"),  # type: ignore[arg-type]
+            dry_run=bool(inst_dict.get("dry_run", False)),
         )
 
         risk = check_safety(instruction)
@@ -422,8 +441,28 @@ class ReactNodes:
             risk_label = {"medium": "[!]", "high": "[!!]"}.get(risk, "[?]")
             self._report_progress("safety", f"{risk_label} 风险等级: {risk}")
 
+        if self._risk_rank(risk) > self._risk_rank(self._max_risk):
+            return {
+                "is_error": True,
+                "error_message": (
+                    f"risk level {risk} exceeds configured max risk {self._max_risk}"
+                ),
+            }
+
+        if (
+            risk == "high"
+            and self._require_dry_run_for_high_risk
+            and not (self._dry_run or instruction.dry_run)
+        ):
+            return {
+                "is_error": True,
+                "error_message": "HIGH-risk operation requires dry-run first",
+            }
+
         # 判断是否需要审批
-        needs_approval = risk in ["medium", "high"]
+        needs_approval = risk in ["medium", "high"] or (
+            risk == "safe" and not self._auto_approve_safe
+        )
 
         return {
             "risk_level": risk,
@@ -553,6 +592,9 @@ class ReactNodes:
         result: WorkerResult,
     ) -> None:
         """记录操作到审计日志"""
+        if result.simulated or self._dry_run or instruction.dry_run:
+            return
+
         audit_worker = self._workers.get("audit")
         if audit_worker:
             await audit_worker.execute(

@@ -12,8 +12,9 @@ from rich.panel import Panel
 from src import __version__
 from src.config.manager import ConfigManager
 from src.orchestrator.engine import OrchestratorEngine
+from src.orchestrator.safety import check_safety
 from src.templates import TemplateManager
-from src.types import WorkerResult
+from src.types import RiskLevel, WorkerResult
 
 app = typer.Typer(
     name="opsai",
@@ -106,6 +107,7 @@ def deploy(
 
 async def _deploy_project(repo_url: str, target_dir: str, dry_run: bool) -> WorkerResult:
     """执行部署"""
+    from src.llm.client import LLMClient
     from src.workers.deploy import DeployWorker
     from src.workers.http import HttpWorker
     from src.workers.shell import ShellWorker
@@ -115,7 +117,8 @@ async def _deploy_project(repo_url: str, target_dir: str, dry_run: bool) -> Work
 
     http_worker = HttpWorker(config.http)
     shell_worker = ShellWorker()
-    deploy_worker = DeployWorker(http_worker, shell_worker)
+    llm_client = LLMClient(config.llm)
+    deploy_worker = DeployWorker(http_worker, shell_worker, llm_client)
 
     return await deploy_worker.execute(
         "deploy",
@@ -294,8 +297,34 @@ def template_run(
     engine = OrchestratorEngine(config, dry_run=dry_run)
 
     try:
+        risk_order: dict[RiskLevel, int] = {
+            "safe": 0,
+            "medium": 1,
+            "high": 2,
+        }
+
         for idx, instruction in enumerate(instructions, 1):
+            risk = check_safety(instruction)
+
+            if not dry_run:
+                if risk_order[risk] > risk_order[config.safety.cli_max_risk]:
+                    console.print(
+                        f"[red]Step {idx} blocked: risk={risk} exceeds CLI limit "
+                        f"{config.safety.cli_max_risk}[/red]"
+                    )
+                    raise typer.Exit(1)
+
+                if (
+                    risk == "high"
+                    and config.safety.require_dry_run_for_high_risk
+                ):
+                    console.print(
+                        f"[red]Step {idx} blocked: high-risk action requires --dry-run first[/red]"
+                    )
+                    raise typer.Exit(1)
+
             console.print(f"\n[bold]Step {idx}/{len(instructions)}:[/bold] {instruction.action}")
+            console.print(f"[dim]Risk: {risk}[/dim]")
             result = asyncio.run(engine.execute_instruction(instruction))
 
             status = "[green]✓[/green]" if result.success else "[red]✗[/red]"

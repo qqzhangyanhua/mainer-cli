@@ -6,7 +6,9 @@ import pytest
 
 from src.context.environment import EnvironmentContext
 from src.llm.client import LLMClient
+from src.orchestrator.graph.checkpoint import SQLITE_AVAILABLE
 from src.orchestrator.graph import ReactGraph
+from src.orchestrator.graph.react_nodes import ReactNodes
 from src.workers.audit import AuditWorker
 from src.workers.base import BaseWorker
 from src.workers.system import SystemWorker
@@ -101,6 +103,7 @@ class TestReactGraph:
         assert "execute" in diagram
 
 
+@pytest.mark.skipif(not SQLITE_AVAILABLE, reason="langgraph sqlite checkpoint not installed")
 class TestReactGraphWithSQLite:
     """ReactGraph SQLite 持久化测试"""
 
@@ -194,3 +197,94 @@ class TestReactGraphStateManagement:
         # LangGraph 对于不存在的会话返回空字典
         assert state is not None
         assert isinstance(state, dict)
+
+
+class TestReactNodesSafetyPolicy:
+    """ReactNodes 安全策略测试"""
+
+    @pytest.fixture
+    def mock_llm(self) -> MockLLMClient:
+        """Mock LLM 客户端"""
+        return MockLLMClient()
+
+    @pytest.fixture
+    def workers(self) -> dict[str, BaseWorker]:
+        """Worker 池"""
+        return {
+            "system": SystemWorker(),
+            "audit": AuditWorker(),
+        }
+
+    @pytest.fixture
+    def context(self) -> EnvironmentContext:
+        """环境上下文"""
+        return EnvironmentContext()
+
+    @pytest.mark.asyncio
+    async def test_high_risk_requires_dry_run_in_graph_mode(
+        self,
+        mock_llm: MockLLMClient,
+        workers: dict[str, BaseWorker],
+        context: EnvironmentContext,
+    ) -> None:
+        """测试图模式高危操作必须先 dry-run"""
+        nodes = ReactNodes(
+            llm_client=mock_llm,
+            workers=workers,
+            context=context,
+            dry_run=False,
+            max_risk="high",
+            auto_approve_safe=True,
+            require_dry_run_for_high_risk=True,
+        )
+
+        state = {
+            "current_instruction": {
+                "worker": "system",
+                "action": "delete_files",
+                "args": {"files": ["tmp.txt"]},
+                "risk_level": "high",
+                "dry_run": False,
+            },
+            "is_simple_intent": False,
+        }
+
+        result = await nodes.safety_node(state)
+
+        assert result.get("is_error") is True
+        assert "requires dry-run first" in str(result.get("error_message", ""))
+
+    @pytest.mark.asyncio
+    async def test_high_risk_with_instruction_dry_run_allowed(
+        self,
+        mock_llm: MockLLMClient,
+        workers: dict[str, BaseWorker],
+        context: EnvironmentContext,
+    ) -> None:
+        """测试指令自带 dry_run 时高危操作可继续流程"""
+        nodes = ReactNodes(
+            llm_client=mock_llm,
+            workers=workers,
+            context=context,
+            dry_run=False,
+            max_risk="high",
+            auto_approve_safe=True,
+            require_dry_run_for_high_risk=True,
+        )
+
+        state = {
+            "current_instruction": {
+                "worker": "system",
+                "action": "delete_files",
+                "args": {"files": ["tmp.txt"]},
+                "risk_level": "high",
+                "dry_run": True,
+            },
+            "is_simple_intent": False,
+        }
+
+        result = await nodes.safety_node(state)
+
+        assert result.get("is_error") is None
+        assert result.get("risk_level") == "high"
+        assert result.get("needs_approval") is True

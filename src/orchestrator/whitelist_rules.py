@@ -33,6 +33,7 @@ COMMAND_WHITELIST: list[CommandRule] = [
     CommandRule("wc", risk_level="safe", description="统计行数/字数"),
     CommandRule("file", risk_level="safe", description="查看文件类型"),
     CommandRule("stat", risk_level="safe", description="查看文件状态"),
+    CommandRule("test", risk_level="safe", description="测试路径/条件"),
     CommandRule("find", risk_level="safe", blocked_flags=["-delete", "-exec"], description="查找文件"),
     CommandRule("locate", risk_level="safe", description="快速定位文件"),
     CommandRule("which", risk_level="safe", description="查找命令路径"),

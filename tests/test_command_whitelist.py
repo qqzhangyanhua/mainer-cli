@@ -114,6 +114,11 @@ class TestCheckCommandSafety:
         assert result.allowed is True
         assert result.risk_level == "safe"
 
+    def test_test_command_allowed(self) -> None:
+        result = check_command_safety("test -d /tmp")
+        assert result.allowed is True
+        assert result.risk_level == "safe"
+
     def test_docker_ps_allowed(self) -> None:
         result = check_command_safety("docker ps -a")
         assert result.allowed is True

@@ -122,17 +122,19 @@ opsai-tui
 ## 安全保障
 
 - **危险操作拦截**：自动识别 `rm -rf`, `kill -9` 等高危命令
-- **二次确认**：破坏性操作需要手动确认
+- **分模式风险控制**：CLI/TUI 分别使用不同风险上限（`cli_max_risk`、`tui_max_risk`）
+- **二次确认**：TUI 下 `medium/high` 默认需要确认；`safe` 可通过配置要求确认
 - **Dry-run 模式**：预览操作，不实际执行
-- **审计日志**：所有操作自动记录到 `~/.opsai/audit.log`
+- **高危先演练**：可配置 `high` 操作必须先 dry-run
+- **审计日志**：实际执行操作记录到 `~/.opsai/audit.log`（dry-run 不记录）
 
 ### 风险等级
 
 | 等级 | 操作示例 | CLI 模式 | TUI 模式 |
 |------|----------|----------|----------|
-| safe | ls, df, docker ps | 自动执行 | 自动执行 |
-| medium | touch, mkdir, restart | 拒绝 | 需确认 |
-| high | rm -rf, kill -9 | 拒绝 | 需确认 |
+| safe | ls, df, docker ps | 允许（受 `cli_max_risk` 控制） | 默认自动通过（可关闭） |
+| medium | touch, mkdir, restart | 允许/阻止（取决于 `cli_max_risk`） | 允许（默认需确认） |
+| high | rm -rf, kill -9 | 允许/阻止（取决于 `cli_max_risk`，且可要求先 dry-run） | 允许（默认需确认，且可要求先 dry-run） |
 
 ---
 
@@ -230,6 +232,14 @@ opsai cache clear
   }
 }
 ```
+
+关键字段说明：
+- `cli_max_risk`：CLI 最大允许风险，超出则直接拒绝。
+- `tui_max_risk`：TUI 最大允许风险，超出则直接拒绝。
+- `auto_approve_safe`：在 TUI 中是否自动通过 `safe` 操作。
+- `require_dry_run_for_high_risk`：启用后，`high` 风险操作必须先走 dry-run。
+- `dry_run_by_default`：全局默认 dry-run。
+- `audit.log_path / max_log_size_mb / retain_days`：审计日志路径、大小上限与保留天数。
 
 ---
 

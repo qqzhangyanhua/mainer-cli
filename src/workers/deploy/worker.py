@@ -176,14 +176,40 @@ class DeployWorker(BaseWorker):
 
             check_result = await self._shell.execute(
                 "execute_command",
-                {"command": f"test -d {safe_clone_path} && echo 'EXISTS' || echo 'NOT_EXISTS'"},
+                {"command": f"test -d {safe_clone_path}"},
             )
             already_exists = False
-            if check_result.success and check_result.data:
+            marker_handled = False
+
+            if isinstance(check_result.data, dict):
+                # 兼容测试桩里仍返回 EXISTS/NOT_EXISTS 的场景
                 stdout = check_result.data.get("stdout", "")
-                if isinstance(stdout, str) and "EXISTS" in stdout and "NOT" not in stdout:
+                if isinstance(stdout, str):
+                    if "EXISTS" in stdout and "NOT" not in stdout:
+                        already_exists = True
+                        marker_handled = True
+                    elif "NOT_EXISTS" in stdout:
+                        already_exists = False
+                        marker_handled = True
+
+                if not marker_handled:
+                    # test -d 约定：目录不存在时 exit_code=1
+                    exit_code = check_result.data.get("exit_code")
+                    if exit_code == 1:
+                        already_exists = False
+                        marker_handled = True
+
+            if not marker_handled:
+                if check_result.success:
                     already_exists = True
-                    steps_log.append(f"  ⚠️ 项目已存在: {clone_path}")
+                else:
+                    return WorkerResult(
+                        success=False,
+                        message=f"检查项目目录失败: {check_result.message}",
+                    )
+
+            if already_exists:
+                steps_log.append(f"  ⚠️ 项目已存在: {clone_path}")
 
             if not already_exists:
                 clone_result = await self._shell.execute(

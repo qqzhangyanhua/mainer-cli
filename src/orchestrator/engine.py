@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Optional
 
 from typing import TYPE_CHECKING
@@ -74,10 +75,16 @@ class OrchestratorEngine:
         self._progress_callback = progress_callback
         self._use_langgraph = use_langgraph
 
+        audit_log_path = Path(self._config.audit.log_path).expanduser()
+
         # 初始化 Workers
         self._workers: dict[str, BaseWorker] = {
             "system": SystemWorker(),
-            "audit": AuditWorker(),
+            "audit": AuditWorker(
+                log_path=audit_log_path,
+                max_log_size_mb=self._config.audit.max_log_size_mb,
+                retain_days=self._config.audit.retain_days,
+            ),
         }
 
         # 注册 ChatWorker
@@ -174,12 +181,31 @@ class OrchestratorEngine:
                 workers=self._workers,
                 context=self._context,
                 dry_run=self._dry_run,
+                max_risk=self._config.safety.tui_max_risk,
+                auto_approve_safe=self._config.safety.auto_approve_safe,
+                require_dry_run_for_high_risk=self._config.safety.require_dry_run_for_high_risk,
                 enable_checkpoints=True,
                 enable_interrupts=enable_interrupts,
                 use_sqlite=use_sqlite_checkpoint,
                 checkpoint_db_path=None,  # 使用默认路径
                 progress_callback=progress_callback,
             )
+
+    @staticmethod
+    def _risk_rank(risk: RiskLevel) -> int:
+        """风险等级转换为可比较数值"""
+        ranks: dict[RiskLevel, int] = {
+            "safe": 0,
+            "medium": 1,
+            "high": 2,
+        }
+        return ranks[risk]
+
+    def _get_mode_max_risk(self) -> RiskLevel:
+        """根据运行模式返回最大允许风险"""
+        if self._confirmation_callback is not None:
+            return self._config.safety.tui_max_risk
+        return self._config.safety.cli_max_risk
 
     def get_worker(self, name: str) -> Optional[BaseWorker]:
         """获取 Worker
@@ -491,27 +517,43 @@ class OrchestratorEngine:
             if self._progress_callback:
                 risk_emoji = {"safe": "✅", "medium": "⚠️", "high": "🚨"}.get(risk, "❓")
                 self._progress_callback("safety", f"{risk_emoji} Risk level: {risk}")
-            if risk in ["medium", "high"]:
-                if self._confirmation_callback:
-                    confirmed = self._confirmation_callback(instruction, risk)
-                    if inspect.isawaitable(confirmed):
-                        confirmed = await confirmed
-                    if not confirmed:
-                        # 记录拒绝
-                        await self._log_operation(
-                            user_input,
-                            instruction,
-                            risk,
-                            confirmed=False,
-                            exit_code=-1,
-                            output="Rejected by user",
-                        )
-                        return "Operation cancelled by user"
-                else:
-                    # CLI 模式无确认回调，自动拒绝
-                    return (
-                        f"Error: {risk.upper()}-risk operation requires TUI mode for confirmation"
+
+            max_risk = self._get_mode_max_risk()
+            if self._risk_rank(risk) > self._risk_rank(max_risk):
+                return (
+                    f"Error: risk level {risk} exceeds configured max risk {max_risk} "
+                    f"for this mode"
+                )
+
+            if (
+                risk == "high"
+                and self._config.safety.require_dry_run_for_high_risk
+                and not (self._dry_run or instruction.dry_run)
+            ):
+                return "Error: HIGH-risk operation requires dry-run first"
+
+            needs_confirmation = False
+            if self._confirmation_callback is not None:
+                if risk in ["medium", "high"]:
+                    needs_confirmation = True
+                elif risk == "safe" and not self._config.safety.auto_approve_safe:
+                    needs_confirmation = True
+
+            if needs_confirmation and self._confirmation_callback is not None:
+                confirmed = self._confirmation_callback(instruction, risk)
+                if inspect.isawaitable(confirmed):
+                    confirmed = await confirmed
+                if not confirmed:
+                    # 记录拒绝
+                    await self._log_operation(
+                        user_input,
+                        instruction,
+                        risk,
+                        confirmed=False,
+                        exit_code=-1,
+                        output="Rejected by user",
                     )
+                    return "Operation cancelled by user"
 
             # 3. Act: 执行 Worker
             if self._progress_callback:
@@ -537,6 +579,7 @@ class OrchestratorEngine:
                 confirmed=True,
                 exit_code=0 if result.success else 1,
                 output=result.message,
+                simulated=result.simulated,
             )
 
             # 5. 记录历史（包含用户原始输入）
@@ -668,8 +711,12 @@ class OrchestratorEngine:
         confirmed: bool,
         exit_code: int,
         output: str,
+        simulated: bool = False,
     ) -> None:
         """记录操作到审计日志"""
+        if simulated or self._dry_run or instruction.dry_run:
+            return
+
         audit_worker = self._workers.get("audit")
         if audit_worker:
             await audit_worker.execute(

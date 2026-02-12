@@ -48,50 +48,48 @@ class DeployPlanner:
 
         python_result = await self._shell.execute(
             "execute_command",
-            {"command": "python3 --version 2>/dev/null || python --version 2>/dev/null"},
+            {"command": "which python3"},
         )
         if python_result.success and python_result.data:
             stdout = python_result.data.get("stdout", "")
             if isinstance(stdout, str) and stdout.strip():
-                env_info["python"] = stdout.strip()
+                env_info["python"] = f"python3 ({stdout.strip()})"
 
         docker_result = await self._shell.execute(
             "execute_command",
-            {"command": "docker --version 2>/dev/null"},
+            {"command": "docker version"},
         )
         if docker_result.success and docker_result.data:
             stdout = docker_result.data.get("stdout", "")
             if isinstance(stdout, str) and stdout.strip():
-                env_info["docker"] = stdout.strip()
+                env_info["docker"] = stdout.strip().splitlines()[0]
 
                 docker_info_result = await self._shell.execute(
                     "execute_command",
-                    {"command": "docker info >/dev/null 2>&1 && echo 'running' || echo 'stopped'"},
+                    {"command": "docker info"},
                 )
-                if docker_info_result.success and docker_info_result.data:
-                    info_stdout = docker_info_result.data.get("stdout", "")
-                    if isinstance(info_stdout, str) and "running" in info_stdout:
-                        env_info["docker_running"] = "yes"
-                    else:
-                        env_info["docker_running"] = "no (Docker Desktop not started)"
+                if docker_info_result.success:
+                    env_info["docker_running"] = "yes"
+                else:
+                    env_info["docker_running"] = "no (Docker daemon not running)"
 
         node_result = await self._shell.execute(
             "execute_command",
-            {"command": "node --version 2>/dev/null"},
+            {"command": "which node"},
         )
         if node_result.success and node_result.data:
             stdout = node_result.data.get("stdout", "")
             if isinstance(stdout, str) and stdout.strip():
-                env_info["node"] = stdout.strip()
+                env_info["node"] = f"installed ({stdout.strip()})"
 
         uv_result = await self._shell.execute(
             "execute_command",
-            {"command": "uv --version 2>/dev/null"},
+            {"command": "which uv"},
         )
         if uv_result.success and uv_result.data:
             stdout = uv_result.data.get("stdout", "")
             if isinstance(stdout, str) and stdout.strip():
-                env_info["uv"] = stdout.strip()
+                env_info["uv"] = f"installed ({stdout.strip()})"
 
         return env_info
 
