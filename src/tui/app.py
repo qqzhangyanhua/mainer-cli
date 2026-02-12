@@ -552,7 +552,7 @@ class OpsAIApp(App[str]):
             self._handle_verbose_command(parts[1:] if len(parts) > 1 else [])
             return True
         if command == "history":
-            show_history_summary(history, self._session_history)
+            show_history_summary(history, self._session_history, parts[1:] if len(parts) > 1 else [])
             return True
         if command == "pwd":
             cwd = format_path(Path.cwd())
@@ -636,19 +636,21 @@ class OpsAIApp(App[str]):
         history = self.query_one("#history", RichLog)
         if not args:
             self._status_enabled = not self._status_enabled
-            self._update_status_bar()
-            return
-        value = args[0].lower()
-        if value in {"on", "enable", "1", "true"}:
-            self._status_enabled = True
-        elif value in {"off", "disable", "0", "false"}:
-            self._status_enabled = False
-        elif value == "toggle":
-            self._status_enabled = not self._status_enabled
         else:
-            history.write("[yellow]用法：/status on|off|toggle[/yellow]")
-            return
+            value = args[0].lower()
+            if value in {"on", "enable", "1", "true"}:
+                self._status_enabled = True
+            elif value in {"off", "disable", "0", "false"}:
+                self._status_enabled = False
+            elif value == "toggle":
+                self._status_enabled = not self._status_enabled
+            else:
+                history.write("[yellow]用法：/status on|off|toggle[/yellow]")
+                return
         self._update_status_bar()
+        state = "开启" if self._status_enabled else "关闭"
+        self._set_status(f"状态栏已{state}")
+        history.write(f"[dim]状态栏已{state}[/dim]")
 
     def _handle_verbose_command(self, args: list[str]) -> None:
         history = self.query_one("#history", RichLog)

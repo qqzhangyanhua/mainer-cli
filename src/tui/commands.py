@@ -51,7 +51,7 @@ def show_help(history: RichLog) -> None:
     history.write("/scenario - 查看运维场景（/scenario <id>）")
     history.write("/clear    - 清空当前对话（历史 + 上下文）")
     history.write("/config   - 显示当前配置（敏感字段已脱敏）")
-    history.write("/history  - 显示会话历史摘要")
+    history.write("/history  - 显示会话历史摘要（/history [N|all]）")
     history.write("/pwd      - 显示当前目录")
     history.write("/export   - 导出会话记录（/export [json|md] [path]）")
     history.write("/theme    - 切换主题（/theme toggle|on|off）")
@@ -90,8 +90,15 @@ def show_config(
 def show_history_summary(
     history: RichLog,
     session_history: list[ConversationEntry],
+    args: list[str] | None = None,
 ) -> None:
-    """显示会话历史摘要"""
+    """显示会话历史摘要
+
+    支持参数:
+      /history        显示最近 5 条
+      /history <N>    显示最近 N 条
+      /history all    显示全部
+    """
     from src.tui.widgets import truncate_text
 
     total = len(session_history)
@@ -99,9 +106,21 @@ def show_history_summary(
         history.write("[dim]暂无会话历史[/dim]")
         return
 
-    history.write(f"[bold green]会话历史[/bold green] 共 {total} 条")
-    recent = session_history[-3:]
-    start_index = total - len(recent) + 1
+    show_count = 5
+    if args:
+        first = args[0].lower()
+        if first == "all":
+            show_count = total
+        elif first.isdigit():
+            show_count = max(1, int(first))
+        else:
+            history.write("[yellow]用法：/history [N|all][/yellow]")
+            return
+
+    recent = session_history[-show_count:]
+    shown = len(recent)
+    history.write(f"[bold green]会话历史[/bold green] 共 {total} 条，显示最近 {shown} 条")
+    start_index = total - shown + 1
     for offset, entry in enumerate(recent):
         index = start_index + offset
         user_text = truncate_text(entry.user_input or "", 60)

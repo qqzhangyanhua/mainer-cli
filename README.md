@@ -7,59 +7,65 @@
 ## 系统架构图
 
 ```mermaid
-flowchart LR
-    U["用户自然语言请求"]
-
-    subgraph Entry["交互层"]
-        CLI["CLI 入口<br/>src/cli.py"]
-        TUI["TUI 入口<br/>src/tui/app.py"]
+flowchart TB
+    subgraph L1["入口层 Entry"]
+        CLI["CLI<br/>src/cli.py"]
+        TUI["TUI<br/>src/tui/app.py"]
     end
 
-    subgraph Core["编排层"]
+    subgraph L2["应用编排层 Application"]
         ENG["OrchestratorEngine<br/>src/orchestrator/engine.py"]
-        GRAPH["ReactGraph（可选，TUI 默认启用）<br/>src/orchestrator/graph/"]
-        PRE["RequestPreprocessor"]
-        PROMPT["PromptBuilder / Instruction 校验"]
-        SAFE["Safety Check"]
+        GRAPH["ReactGraph（可选）<br/>src/orchestrator/graph/"]
+        SCN["ScenarioManager<br/>src/orchestrator/scenarios.py"]
     end
 
-    subgraph Runtime["执行层（Workers）"]
-        W_SYS["SystemWorker"]
-        W_CONTAINER["ContainerWorker"]
-        W_GIT["GitWorker"]
-        W_HTTP["HttpWorker"]
-        W_SHELL["ShellWorker"]
-        W_DEPLOY["DeployWorker"]
-        W_ANALYZE["AnalyzeWorker"]
-        W_AUDIT["AuditWorker"]
+    subgraph L3["策略与规则层 Domain"]
+        PRE["Preprocessor<br/>src/orchestrator/preprocessor.py"]
+        INS["Instruction 生成<br/>src/orchestrator/instruction.py"]
+        VAL["Validation<br/>src/orchestrator/validation.py"]
+        SAF["Safety<br/>src/orchestrator/safety.py"]
+        WLR["Whitelist Rules<br/>src/orchestrator/whitelist_rules.py"]
     end
 
-    subgraph Support["支撑层"]
-        CFG["ConfigManager<br/>src/config/manager.py"]
-        CTX["EnvironmentContext / Detector<br/>src/context/"]
-        LLM["LLMClient<br/>src/llm/client.py"]
-        LOG["~/.opsai/audit.log"]
+    subgraph L4["基础设施层 Infrastructure"]
+        WRK["Workers<br/>src/workers/*.py"]
+        LLM["LLM Client<br/>src/llm/client.py"]
+        CFG["Config Manager<br/>src/config/manager.py"]
+        CTX["Context Detector<br/>src/context/*.py"]
+        TMP["Template Manager<br/>src/templates/manager.py"]
     end
 
-    U --> CLI
-    U --> TUI
+    subgraph L5["外部系统层 External"]
+        OS["OS / Shell"]
+        DK["Docker Engine"]
+        GH["GitHub / HTTP"]
+        AUD["~/.opsai/audit.log"]
+    end
+
     CLI --> ENG
+    CLI --> TMP
     TUI --> ENG
+    TUI --> SCN
+
     ENG --> GRAPH
     ENG --> PRE
-    ENG --> PROMPT
-    ENG --> SAFE
+    ENG --> INS
+    INS --> VAL
+    ENG --> SAF
+    SAF --> WLR
+
     PRE --> CTX
-    PROMPT --> LLM
-    SAFE --> Runtime
-    GRAPH --> Runtime
-    ENG --> Runtime
     ENG --> CFG
-    CFG --> LLM
-    W_AUDIT --> LOG
+    ENG --> LLM
+    ENG --> WRK
+
+    WRK --> OS
+    WRK --> DK
+    WRK --> GH
+    WRK --> AUD
 ```
 
-执行链路：用户请求从 CLI/TUI 进入编排引擎，经过意图预处理、指令生成与安全检查后，路由到对应 Worker 执行，并将关键操作写入审计日志。
+分层说明：上层负责交互与编排，中层负责规则与安全决策，下层负责具体执行与外部系统交互，层间依赖单向向下，便于测试、替换与扩展。
 
 ## 快速开始
 
