@@ -51,6 +51,12 @@ class HttpConfig(BaseModel):
     )
 
 
+class TUIConfig(BaseModel):
+    """TUI 显示配置"""
+
+    show_thinking: bool = Field(default=False, description="是否在内容区展示思考过程")
+
+
 class OpsAIConfig(BaseModel):
     """OpsAI 完整配置"""
 
@@ -58,6 +64,7 @@ class OpsAIConfig(BaseModel):
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
     http: HttpConfig = Field(default_factory=HttpConfig)
+    tui: TUIConfig = Field(default_factory=TUIConfig)
 
 
 class ConfigManager:

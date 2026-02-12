@@ -55,7 +55,7 @@ def show_help(history: RichLog) -> None:
     history.write("/pwd      - 显示当前目录")
     history.write("/export   - 导出会话记录（/export [json|md] [path]）")
     history.write("/theme    - 切换主题（/theme toggle|on|off）")
-    history.write("/verbose  - 详细日志开关（/verbose on|off|toggle）")
+    history.write("/verbose  - 思考过程展示开关（/verbose on|off|toggle）")
     history.write("/status   - 状态栏开关（/status on|off|toggle）")
     history.write("/exit     - 退出")
     history.write("[dim]快捷键：Ctrl+C 退出，Ctrl+L 清空对话[/dim]")

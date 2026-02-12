@@ -235,7 +235,7 @@ class OpsAIApp(App[str]):
         self._status_timer: Timer | None = None
         self._status_enabled: bool = True
         self._status_message: str = ""
-        self._verbose_enabled: bool = True
+        self._verbose_enabled: bool = self._config.tui.show_thinking
         self._slash_menu_items: list[str] = []
         self._slash_menu_visible: bool = False
         self._loading_text: str = "思考中..."
@@ -397,6 +397,18 @@ class OpsAIApp(App[str]):
         if step == "result":
             return
         self._update_loading_text(message)
+        if self._verbose_enabled:
+            step_label = {
+                "preprocessing": "[dim][bold]Thinking[/bold][/dim]",
+                "reasoning": "[dim][bold]Reasoning[/bold][/dim]",
+                "instruction": "[dim][bold]Instruction[/bold][/dim]",
+                "safety": "[dim][bold]Safety[/bold][/dim]",
+                "approve": "[dim][bold]Approve[/bold][/dim]",
+                "executing": "[dim][bold]Executing[/bold][/dim]",
+                "error": "[dim][bold]Error[/bold][/dim]",
+            }.get(step, f"[dim][bold]{step}[/bold][/dim]")
+            history = self.query_one("#history", RichLog)
+            history.write(f"{step_label} {message}")
 
     def _show_loading(self, text: str = "思考中...") -> None:
         loading_container = self.query_one("#loading-container", Container)
@@ -658,23 +670,25 @@ class OpsAIApp(App[str]):
         history = self.query_one("#history", RichLog)
         if not args:
             self._verbose_enabled = not self._verbose_enabled
-            state = "开启" if self._verbose_enabled else "关闭"
-            self._set_status(f"详细日志已{state}")
-            history.write(f"[dim]详细日志已{state}[/dim]")
-            return
-        value = args[0].lower()
-        if value in {"on", "enable", "1", "true"}:
-            self._verbose_enabled = True
-        elif value in {"off", "disable", "0", "false"}:
-            self._verbose_enabled = False
-        elif value == "toggle":
-            self._verbose_enabled = not self._verbose_enabled
         else:
-            history.write("[yellow]用法：/verbose on|off|toggle[/yellow]")
-            return
+            value = args[0].lower()
+            if value in {"on", "enable", "1", "true"}:
+                self._verbose_enabled = True
+            elif value in {"off", "disable", "0", "false"}:
+                self._verbose_enabled = False
+            elif value == "toggle":
+                self._verbose_enabled = not self._verbose_enabled
+            else:
+                history.write("[yellow]用法：/verbose on|off|toggle[/yellow]")
+                return
+
+        # 持久化到配置文件
+        self._config.tui.show_thinking = self._verbose_enabled
+        self._config_manager.save(self._config)
+
         state = "开启" if self._verbose_enabled else "关闭"
-        self._set_status(f"详细日志已{state}")
-        history.write(f"[dim]详细日志已{state}[/dim]")
+        self._set_status(f"思考过程展示已{state}")
+        history.write(f"[dim]思考过程展示已{state}[/dim]")
 
     def _handle_theme_command(self, args: list[str]) -> None:
         history = self.query_one("#history", RichLog)
@@ -745,7 +759,7 @@ class OpsAIApp(App[str]):
             ("/export", "导出会话记录（默认导出到当前目录）", ""),
             ("/theme", f"切换主题（当前: {theme_state}）", ""),
             ("/them", "/theme 的别名", ""),
-            ("/verbose", f"详细日志开关（当前: {verbose_state}）", ""),
+            ("/verbose", f"思考过程展示开关（当前: {verbose_state}）", ""),
             ("/status", f"状态栏开关（当前: {status_state}）", ""),
             ("/exit", "退出", ""),
         ]
