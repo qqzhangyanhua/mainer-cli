@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Optional
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
@@ -57,7 +57,7 @@ class TestFetchUrl:
         mock_response = AsyncMock()
         mock_response.status_code = 200
         mock_response.text = "Hello, World!"
-        mock_response.raise_for_status = AsyncMock()
+        mock_response.raise_for_status = Mock()
 
         with patch("httpx.AsyncClient.get", return_value=mock_response):
             result = await http_worker.execute("fetch_url", {"url": "https://example.com"})
@@ -124,7 +124,7 @@ class TestListGithubFiles:
         async def mock_get(url: str, headers: Optional[dict[str, str]] = None) -> AsyncMock:
             mock_response = AsyncMock()
             mock_response.status_code = 200
-            mock_response.raise_for_status = AsyncMock()
+            mock_response.raise_for_status = Mock()
             mock_response.json = lambda: [
                 {"name": "README.md", "type": "file", "path": "README.md", "size": 1024},
                 {"name": "Dockerfile", "type": "file", "path": "Dockerfile", "size": 512},
@@ -147,7 +147,7 @@ class TestListGithubFiles:
         async def mock_get(url: str, headers: Optional[dict[str, str]] = None) -> AsyncMock:
             mock_response = AsyncMock()
             mock_response.status_code = 200
-            mock_response.raise_for_status = AsyncMock()
+            mock_response.raise_for_status = Mock()
             mock_response.json = lambda: [
                 {"name": "Dockerfile", "type": "file", "path": "Dockerfile", "size": 512},
                 {
