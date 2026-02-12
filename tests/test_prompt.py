@@ -125,3 +125,46 @@ class TestPromptBuilder:
         assert "system:" in caps
         assert "find_large_files" in caps
         assert "check_disk_usage" in caps
+
+    def test_system_prompt_contains_macos_memory_commands(self) -> None:
+        """测试系统提示包含 macOS 内存查询命令示例"""
+        builder = PromptBuilder()
+        context = EnvironmentContext()
+
+        prompt = builder.build_system_prompt(context)
+
+        # 验证包含 macOS 内存查询的正确示例
+        assert "Check memory usage:" in prompt
+        # 验证 macOS 命令（不使用 --sort，因为 macOS 的 ps 不支持）
+        assert "macOS/Darwin:" in prompt
+        assert "sort -nrk 4" in prompt or "top -l 1 -o mem" in prompt or "vm_stat" in prompt
+        # 验证 Linux 命令（使用 --sort）
+        assert "Linux:" in prompt
+        assert "--sort=-%mem" in prompt or "free -h" in prompt
+
+    def test_system_prompt_contains_os_specific_examples(self) -> None:
+        """测试系统提示包含操作系统特定的命令示例"""
+        builder = PromptBuilder()
+        context = EnvironmentContext()
+
+        prompt = builder.build_system_prompt(context)
+
+        # 验证包含操作系统特定命令的标记
+        assert "OS-SPECIFIC COMMANDS" in prompt
+        assert "check Current Environment" in prompt or "Current Environment" in prompt
+
+    def test_system_prompt_contains_memory_query_workflow(self) -> None:
+        """测试系统提示包含完整的内存查询工作流示例"""
+        builder = PromptBuilder()
+        context = EnvironmentContext()
+
+        prompt = builder.build_system_prompt(context)
+
+        # 验证包含内存查询的完整示例工作流
+        assert "查看内存占用" in prompt or "内存占用情况" in prompt
+        # 验证包含 macOS 和 Linux 两种命令
+        assert "sort -nrk 4" in prompt  # macOS 命令
+        assert "--sort=-%mem" in prompt  # Linux 命令
+        # 验证强调了"先执行命令，再总结"的规则
+        assert "execute the command FIRST" in prompt or "MUST execute" in prompt
+        assert "NEVER skip command execution" in prompt

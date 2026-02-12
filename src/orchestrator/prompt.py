@@ -100,6 +100,12 @@ Worker Details:
     * Find process on port:
       - macOS/Darwin: lsof -i :<PORT>
       - Linux: ss -tlnp | grep :<PORT>  OR  netstat -tlnp | grep :<PORT>
+    * Check memory usage:
+      - macOS/Darwin: ps aux | sort -nrk 4 | head -n 11  OR  top -l 1 -o mem -n 10  OR  vm_stat
+      - Linux: ps aux --sort=-%mem | head -n 11  OR  free -h  OR  top -bn1 | head -n 20
+    * Check disk usage:
+      - macOS/Darwin: df -h
+      - Linux: df -h  OR  du -sh /*
   - Examples:
     * List files: {{"worker": "shell", "action": "execute_command", "args": {{"command": "ls -la"}}, "risk_level": "safe"}}
     * Check disk: {{"worker": "shell", "action": "execute_command", "args": {{"command": "df -h"}}, "risk_level": "safe"}}
@@ -162,9 +168,13 @@ Worker Details:
 - system/container: Avoid these for listing/monitoring - use shell commands instead
 
 CRITICAL Rules:
-0. ⭐⭐⭐ SUMMARIZE COMMAND OUTPUT (最关键!!!):
-   - After executing a shell command, you MUST use chat.respond to summarize the result in natural language (Chinese)!
-   - NEVER leave raw command output as the final answer. Users need plain-language explanations.
+0. ⭐⭐⭐ COMMAND EXECUTION + SUMMARIZATION (最关键!!!):
+   - For viewing/listing requests: ALWAYS execute the command FIRST, THEN use chat.respond to summarize!
+   - NEVER skip command execution and respond with generic text!
+   - NEVER leave raw command output as the final answer - always summarize in natural language (Chinese)!
+   - Two-step workflow is MANDATORY for viewing requests:
+     Step 1: shell.execute_command (get actual data)
+     Step 2: chat.respond (summarize the data in Chinese)
    - Examples:
      * User: "我本机装了nginx么" → Step 1: shell.execute_command "ps aux | grep nginx | grep -v grep"
        → Step 2 (after seeing output): chat.respond "你本机目前没有运行 nginx 进程。如果你安装了但没启动，可以用 `nginx` 或 `brew services start nginx` 启动。"
@@ -181,10 +191,18 @@ CRITICAL Rules:
    - Key phrases for explanation intent: "是干嘛的", "有什么用", "是什么", "解释", "什么意思", "干什么的"
    - If user says "我只有一个X" or "就一个X", they already saw the list → go directly to analyze.explain!
 2. For greetings, use chat.respond immediately
-3. For listing/viewing info (docker services, files, processes):
+3. ⭐⭐⭐ For listing/viewing info (docker, files, processes, memory, disk, network):
+   - You MUST execute the actual command first! NEVER respond with generic text without running the command.
    - ONLY when user ONLY asks to list (no explanation intent)
    - ALWAYS use FULL commands without --format flags
    - Show complete tables: "docker ps" NOT "docker ps --format"
+   - Examples of viewing requests that REQUIRE command execution:
+     * "查看内存" (macOS) → shell.execute_command "ps aux | sort -nrk 4 | head -n 11"
+     * "查看内存" (Linux) → shell.execute_command "ps aux --sort=-%mem | head -n 11"
+     * "列出docker" → shell.execute_command "docker ps"
+     * "磁盘使用" → shell.execute_command "df -h"
+     * "查看进程" → shell.execute_command "ps aux"
+   - NEVER use chat.respond directly for viewing requests without executing the command first!
 4. ⭐⭐⭐ REFERENCE RESOLUTION (指代解析):
    - When user says "这个", "它", "这", "那个", "this", "that" → EXTRACT actual name from Previous actions Output!
    - Example: If docker ps output shows "compoder-mongo", and user says "这个是干嘛的" → target = "compoder-mongo" (NOT "这个"!)
@@ -206,6 +224,11 @@ Step 2 (after seeing output): {{"worker": "chat", "action": "respond", "args": {
 User: "我本机有nginx么"
 Step 1: {{"worker": "shell", "action": "execute_command", "args": {{"command": "ps aux | grep nginx | grep -v grep"}}, "risk_level": "safe"}}
 Step 2 (after seeing no matches): {{"worker": "chat", "action": "respond", "args": {{"message": "你本机目前没有运行 nginx 进程。"}}, "risk_level": "safe"}}
+
+User: "查看内存占用" or "内存占用情况" or "列出10个内存占用的"
+Step 1 (macOS): {{"worker": "shell", "action": "execute_command", "args": {{"command": "ps aux | sort -nrk 4 | head -n 11"}}, "risk_level": "safe"}}
+Step 1 (Linux): {{"worker": "shell", "action": "execute_command", "args": {{"command": "ps aux --sort=-%mem | head -n 11"}}, "risk_level": "safe"}}
+Step 2 (after seeing output): {{"worker": "chat", "action": "respond", "args": {{"message": "当前内存占用前10的进程：\n1. Chrome (PID 1234) - 2.5GB\n2. Docker (PID 5678) - 1.2GB\n总体内存使用正常。"}}, "risk_level": "safe"}}
 
 User: "怎么安装nginx" or "帮我安装nginx"
 Step 1: {{"worker": "shell", "action": "execute_command", "args": {{"command": "brew install nginx"}}, "risk_level": "medium"}}
