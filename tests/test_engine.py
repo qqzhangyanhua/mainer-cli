@@ -58,165 +58,118 @@ class TestOrchestratorEngine:
         assert "Unknown worker" in result.message
 
     @pytest.mark.asyncio
-    async def test_react_loop_single_step(self, engine: OrchestratorEngine) -> None:
-        """测试单步 ReAct 循环"""
-        # Mock LLM 响应
-        mock_llm_response = '{"worker": "system", "action": "check_disk_usage", "args": {"path": "/"}, "risk_level": "safe"}'
-
-        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
-            mock_generate.return_value = mock_llm_response
-
-            # Mock task_completed
-            with patch.object(
-                engine, "execute_instruction", new_callable=AsyncMock
-            ) as mock_execute:
-                mock_execute.return_value = WorkerResult(
-                    success=True,
-                    data={"percent_used": 50},
-                    message="Disk 50% used",
-                    task_completed=True,
-                )
-
-                result = await engine.react_loop("检查磁盘")
-
-                assert "Disk 50% used" in result
-                mock_generate.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_react_loop_max_iterations(self, engine: OrchestratorEngine) -> None:
-        """测试 ReAct 循环最大迭代"""
-        mock_llm_response = (
-            '{"worker": "system", "action": "check_disk_usage", "args": {}, "risk_level": "safe"}'
-        )
-
-        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
-            mock_generate.return_value = mock_llm_response
-
-            with patch.object(
-                engine, "execute_instruction", new_callable=AsyncMock
-            ) as mock_execute:
-                # 永远不完成
-                mock_execute.return_value = WorkerResult(
-                    success=True,
-                    message="Still working",
-                    task_completed=False,
-                )
-
-                result = await engine.react_loop("无限任务")
-
-                # 应该在最大迭代后停止
-                assert mock_generate.call_count == 5  # 默认 max_iterations
-
-    @pytest.mark.asyncio
-    async def test_cli_mode_allows_medium_when_configured(self) -> None:
-        """测试 CLI 模式在配置允许时执行中风险操作"""
-        config = OpsAIConfig()
-        config.safety.cli_max_risk = "medium"
-        engine = OrchestratorEngine(config)
-
-        mock_llm_response = (
-            '{"worker": "system", "action": "write_file", '
-            '"args": {"path": "a.txt", "content": "x"}, "risk_level": "medium"}'
-        )
-
-        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
-            mock_generate.return_value = mock_llm_response
-
-            with patch.object(
-                engine, "execute_instruction", new_callable=AsyncMock
-            ) as mock_execute:
-                mock_execute.return_value = WorkerResult(
-                    success=True,
-                    message="ok",
-                    task_completed=True,
-                )
-
-                result = await engine.react_loop("写入文件")
-
-                assert result == "ok"
-                mock_execute.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_cli_mode_blocks_medium_by_max_risk(self) -> None:
-        """测试 CLI 模式在 max_risk=safe 时阻断中风险操作"""
-        config = OpsAIConfig()
-        config.safety.cli_max_risk = "safe"
-        engine = OrchestratorEngine(config)
-
-        mock_llm_response = (
-            '{"worker": "system", "action": "write_file", '
-            '"args": {"path": "a.txt", "content": "x"}, "risk_level": "medium"}'
-        )
-
-        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
-            mock_generate.return_value = mock_llm_response
-
-            result = await engine.react_loop("写入文件")
-
-            assert "exceeds configured max risk" in result
-
-    @pytest.mark.asyncio
-    async def test_cli_high_risk_requires_dry_run(self) -> None:
-        """测试 CLI 高危操作要求先 dry-run"""
-        config = OpsAIConfig()
-        config.safety.cli_max_risk = "high"
-        config.safety.require_dry_run_for_high_risk = True
-        engine = OrchestratorEngine(config)
-
-        mock_llm_response = (
-            '{"worker": "system", "action": "delete_files", '
-            '"args": {"files": ["a.txt"]}, "risk_level": "high"}'
-        )
-
-        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
-            mock_generate.return_value = mock_llm_response
-
-            result = await engine.react_loop("删除文件")
-
-            assert "requires dry-run first" in result
-
-    @pytest.mark.asyncio
-    async def test_safe_operation_requires_confirmation_when_auto_approve_disabled(self) -> None:
-        """测试 auto_approve_safe=false 时 safe 操作也需要确认"""
-        config = OpsAIConfig()
-        config.safety.auto_approve_safe = False
-
-        callback = AsyncMock(return_value=False)
-        engine = OrchestratorEngine(config, confirmation_callback=callback)
-
-        mock_llm_response = (
-            '{"worker": "system", "action": "check_disk_usage", '
-            '"args": {"path": "/"}, "risk_level": "safe"}'
-        )
-
-        with patch.object(engine._llm_client, "generate", new_callable=AsyncMock) as mock_generate:
-            mock_generate.return_value = mock_llm_response
-
-            result = await engine.react_loop("检查磁盘")
-
-            assert result == "Operation cancelled by user"
-            callback.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_deploy_intent_uses_current_working_directory_as_target_dir(self) -> None:
-        """测试 deploy 意图默认使用当前工作目录作为 target_dir"""
-        config = OpsAIConfig()
-        config.safety.cli_max_risk = "medium"
-        engine = OrchestratorEngine(config)
+    async def test_react_loop_graph_single_step(self, engine: OrchestratorEngine) -> None:
+        """测试单步 ReAct 循环（LangGraph）"""
+        mock_state = {
+            "final_message": "Disk 50% used",
+            "task_completed": True,
+            "needs_approval": False,
+            "messages": [],
+        }
 
         with patch.object(
-            engine, "execute_instruction", new_callable=AsyncMock
-        ) as mock_execute:
-            mock_execute.return_value = WorkerResult(
-                success=True,
-                message="ok",
-                task_completed=True,
-            )
+            engine._react_graph, "run", new_callable=AsyncMock
+        ) as mock_run:
+            mock_run.return_value = mock_state
 
-            result = await engine.react_loop("帮我部署 https://github.com/test/repo")
+            result = await engine.react_loop_graph("检查磁盘")
+
+            assert result == "Disk 50% used"
+            mock_run.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_react_loop_graph_max_iterations(self, engine: OrchestratorEngine) -> None:
+        """测试 ReAct 循环最大迭代（LangGraph）"""
+        mock_state = {
+            "final_message": "Task incomplete: reached maximum iterations",
+            "task_completed": False,
+            "needs_approval": False,
+            "messages": [],
+        }
+
+        with patch.object(
+            engine._react_graph, "run", new_callable=AsyncMock
+        ) as mock_run:
+            mock_run.return_value = mock_state
+
+            await engine.react_loop_graph("无限任务", max_iterations=5)
+
+            mock_run.assert_called_once()
+            # max_iterations 被传递到 ReactGraph.run
+            call_kwargs = mock_run.call_args.kwargs
+            assert call_kwargs["max_iterations"] == 5
+
+    @pytest.mark.asyncio
+    async def test_react_loop_graph_approval_required(self, engine: OrchestratorEngine) -> None:
+        """测试 LangGraph 返回审批中断"""
+        mock_state = {
+            "needs_approval": True,
+            "approval_granted": False,
+            "messages": [],
+        }
+
+        with patch.object(
+            engine._react_graph, "run", new_callable=AsyncMock
+        ) as mock_run:
+            mock_run.return_value = mock_state
+
+            result = await engine.react_loop_graph("高危操作")
+
+            assert result == "__APPROVAL_REQUIRED__"
+
+    @pytest.mark.asyncio
+    async def test_react_loop_graph_error_handling(self, engine: OrchestratorEngine) -> None:
+        """测试 LangGraph 错误处理"""
+        with patch.object(
+            engine._react_graph, "run", new_callable=AsyncMock
+        ) as mock_run:
+            mock_run.side_effect = RuntimeError("graph failed")
+
+            result = await engine.react_loop_graph("测试错误")
+
+            assert "Error in ReactGraph" in result
+
+    @pytest.mark.asyncio
+    async def test_react_loop_graph_updates_session_history(
+        self, engine: OrchestratorEngine
+    ) -> None:
+        """测试 react_loop_graph 更新会话历史"""
+        mock_state = {
+            "final_message": "ok",
+            "task_completed": True,
+            "needs_approval": False,
+            "messages": [],
+        }
+
+        with patch.object(
+            engine._react_graph, "run", new_callable=AsyncMock
+        ) as mock_run:
+            mock_run.return_value = mock_state
+
+            history = []
+            result = await engine.react_loop_graph("测试", session_history=history)
 
             assert result == "ok"
-            mock_execute.assert_called_once()
-            instruction = mock_execute.call_args.args[0]
-            assert instruction.worker == "deploy"
-            assert instruction.args.get("target_dir") == engine._context.cwd
+
+    @pytest.mark.asyncio
+    async def test_resume_react_loop(self, engine: OrchestratorEngine) -> None:
+        """测试恢复被中断的 ReAct 循环"""
+        mock_state = {
+            "final_message": "Resumed ok",
+            "task_completed": True,
+            "needs_approval": False,
+            "messages": [],
+        }
+
+        with patch.object(
+            engine._react_graph, "resume", new_callable=AsyncMock
+        ) as mock_resume:
+            mock_resume.return_value = mock_state
+
+            result = await engine.resume_react_loop("session-1", approval_granted=True)
+
+            assert result == "Resumed ok"
+            mock_resume.assert_called_once_with(
+                session_id="session-1",
+                approval_granted=True,
+            )

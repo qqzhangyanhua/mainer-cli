@@ -74,7 +74,7 @@ def query(
     engine = OrchestratorEngine(config, dry_run=dry_run)
 
     try:
-        result = asyncio.run(engine.react_loop(request))
+        result = asyncio.run(engine.react_loop_graph(request))
         console.print(Panel(result, title="Result", border_style="green"))
     except Exception as e:
         console.print(Panel(f"Error: {e!s}", title="Error", border_style="red"))

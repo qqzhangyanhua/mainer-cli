@@ -39,21 +39,27 @@ class TestDeployIntegration:
         assert "fetch_github_readme" in caps
         assert "list_github_files" in caps
 
-    def test_deploy_intent_detected(self, engine: OrchestratorEngine) -> None:
+    def test_deploy_intent_detected(self) -> None:
         """测试部署意图被正确检测"""
-        preprocessor = engine._preprocessor
+        from src.orchestrator.preprocessor import RequestPreprocessor
+
+        preprocessor = RequestPreprocessor()
         result = preprocessor.preprocess("帮我部署 https://github.com/user/repo")
         assert result.intent == "deploy"
 
-    def test_deploy_intent_with_gitlab(self, engine: OrchestratorEngine) -> None:
+    def test_deploy_intent_with_gitlab(self) -> None:
         """测试 GitLab URL 也能触发部署意图"""
-        preprocessor = engine._preprocessor
+        from src.orchestrator.preprocessor import RequestPreprocessor
+
+        preprocessor = RequestPreprocessor()
         result = preprocessor.preprocess("部署 https://gitlab.com/user/repo")
         assert result.intent == "deploy"
 
-    def test_extract_repo_url(self, engine: OrchestratorEngine) -> None:
+    def test_extract_repo_url(self) -> None:
         """测试 URL 提取"""
-        preprocessor = engine._preprocessor
+        from src.orchestrator.preprocessor import RequestPreprocessor
+
+        preprocessor = RequestPreprocessor()
         url = preprocessor.extract_repo_url("帮我部署 https://github.com/user/my-project")
         assert url == "https://github.com/user/my-project"
 
@@ -88,13 +94,16 @@ class TestDeployPromptSelection:
     def config(self) -> OpsAIConfig:
         return OpsAIConfig()
 
-    def test_deploy_prompt_contains_http_actions(self, config: OpsAIConfig) -> None:
+    def test_deploy_prompt_contains_http_actions(self) -> None:
         """测试部署 Prompt 包含 HTTP 操作"""
-        engine = OrchestratorEngine(config)
-        prompt_builder = engine._prompt_builder
+        from src.context.environment import EnvironmentContext
+        from src.orchestrator.prompt import PromptBuilder
+
+        prompt_builder = PromptBuilder()
+        context = EnvironmentContext()
 
         prompt = prompt_builder.build_deploy_prompt(
-            engine._context,
+            context,
             repo_url="https://github.com/user/repo",
             target_dir="~/projects",
         )
@@ -103,14 +112,17 @@ class TestDeployPromptSelection:
         assert "list_github_files" in prompt
         assert "git clone" in prompt.lower()
 
-    def test_deploy_prompt_includes_repo_url(self, config: OpsAIConfig) -> None:
+    def test_deploy_prompt_includes_repo_url(self) -> None:
         """测试部署 Prompt 包含仓库 URL"""
-        engine = OrchestratorEngine(config)
-        prompt_builder = engine._prompt_builder
+        from src.context.environment import EnvironmentContext
+        from src.orchestrator.prompt import PromptBuilder
+
+        prompt_builder = PromptBuilder()
+        context = EnvironmentContext()
 
         repo_url = "https://github.com/test-user/test-repo"
         prompt = prompt_builder.build_deploy_prompt(
-            engine._context,
+            context,
             repo_url=repo_url,
             target_dir="~/projects",
         )
@@ -125,10 +137,12 @@ class TestWorkerCapabilities:
     def config(self) -> OpsAIConfig:
         return OpsAIConfig()
 
-    def test_prompt_includes_http_capabilities(self, config: OpsAIConfig) -> None:
+    def test_prompt_includes_http_capabilities(self) -> None:
         """测试 Prompt 包含 HTTP 能力"""
-        engine = OrchestratorEngine(config)
-        caps = engine._prompt_builder.get_worker_capabilities()
+        from src.orchestrator.prompt import PromptBuilder
+
+        prompt_builder = PromptBuilder()
+        caps = prompt_builder.get_worker_capabilities()
 
         assert "http" in caps
         assert "fetch_github_readme" in caps

@@ -34,15 +34,15 @@ class TestCLI:
         assert result.exit_code == 0
         assert "llm" in result.stdout.lower()
 
-    @patch("src.cli.OrchestratorEngine.react_loop", new_callable=AsyncMock)
-    def test_query_command(self, mock_react_loop: AsyncMock) -> None:
+    @patch("src.cli.OrchestratorEngine.react_loop_graph", new_callable=AsyncMock)
+    def test_query_command(self, mock_react_loop_graph: AsyncMock) -> None:
         """测试查询命令"""
-        mock_react_loop.return_value = "Disk 50% used"
+        mock_react_loop_graph.return_value = "Disk 50% used"
 
         result = runner.invoke(app, ["query", "检查磁盘"])
 
         assert result.exit_code == 0
-        mock_react_loop.assert_called_once()
+        mock_react_loop_graph.assert_called_once()
 
     def test_deploy_project_initializes_deploy_worker_with_llm(self) -> None:
         """测试 _deploy_project 传入 LLMClient"""

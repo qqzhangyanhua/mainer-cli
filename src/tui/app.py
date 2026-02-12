@@ -216,7 +216,6 @@ class OpsAIApp(App[str]):
             self._config,
             confirmation_callback=self._request_confirmation,
             progress_callback=self._on_progress,
-            use_langgraph=True,
         )
 
         # 注入回调到 DeployWorker

@@ -105,6 +105,7 @@ class TestDockerRunVerification:
             "已生成环境变量",
             ["python -c '...' > .env"],
             "docker run -d --name myapp -p 5000:5000 --env-file .env myapp_image",
+            "缺少环境变量 SECRET_KEY",
         )
 
         success, message, info = await executor.verify_docker_deployment(
@@ -144,6 +145,7 @@ class TestDockerRunVerification:
             "无法自动修复",
             [],
             None,
+            "未知错误",
         )
 
         success, message, info = await executor.verify_docker_deployment(
@@ -235,6 +237,7 @@ class TestDockerComposeVerification:
             "已修复环境变量",
             [],
             "docker compose up -d",
+            "缺少环境变量",
         )
 
         success, message, info = await executor.verify_docker_deployment(
