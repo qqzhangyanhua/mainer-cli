@@ -169,6 +169,47 @@ class TestDeployDryRun:
         assert result.simulated is True
         assert "[DRY-RUN" in result.message
 
+    @pytest.mark.asyncio
+    async def test_default_target_dir_uses_current_working_directory(
+        self,
+        mock_http_worker: MagicMock,
+        mock_shell_worker: MagicMock,
+        mock_llm_client: MagicMock,
+    ) -> None:
+        """测试未指定 target_dir 时默认使用当前工作目录"""
+        deploy_worker = DeployWorker(mock_http_worker, mock_shell_worker, mock_llm_client)
+
+        mock_http_worker.execute.side_effect = [
+            WorkerResult(success=True, data={"content": "# Test"}, message="README"),
+            WorkerResult(success=True, data={"key_files": "README.md"}, message="Files"),
+        ]
+
+        plan_response = {
+            "thinking": ["使用当前目录部署"],
+            "project_type": "python",
+            "steps": [
+                {"description": "安装依赖", "command": "pip install -r requirements.txt"},
+            ],
+            "notes": "",
+        }
+        mock_llm_client.generate.return_value = json.dumps(plan_response)
+        mock_llm_client.parse_json_response.return_value = plan_response
+
+        mock_shell_worker.execute.return_value = WorkerResult(
+            success=True,
+            message="ok",
+            data={"stdout": ""},
+        )
+
+        with patch("os.getcwd", return_value="/tmp/current-workdir"):
+            result = await deploy_worker.execute(
+                "deploy",
+                {"repo_url": "https://github.com/test/repo", "dry_run": True},
+            )
+
+        assert result.success is True
+        assert "/tmp/current-workdir/repo" in result.message
+
 
 class TestDeploySuccess:
     """deploy 成功流程测试"""
@@ -213,34 +254,21 @@ class TestDeploySuccess:
         mock_llm_client.generate.return_value = json.dumps(plan_response)
         mock_llm_client.parse_json_response.return_value = plan_response
 
-        # Shell 调用序列:
-        # 1-5: collect_env_info (python, docker, docker info, node, uv)
-        # 6: collect_key_file_contents (read_local_file) - 通过 patch
-        # 7: mkdir
-        # 8: check exists
-        # 9: git clone
-        # 10: execute step (docker compose up -d)
-        env_result = WorkerResult(success=True, message="ok", data={"stdout": ""})
-        mock_shell_worker.execute.side_effect = [
-            # mkdir
-            WorkerResult(success=True, message="Directory created"),
-            # check exists
-            WorkerResult(
-                success=True,
-                data={"stdout": "NOT_EXISTS"},
-                message="Checked",
-            ),
-            # git clone
-            WorkerResult(success=True, message="Cloned"),
-            # collect_env_info: python, docker, docker info, node, uv
-            env_result,
-            env_result,
-            env_result,
-            env_result,
-            env_result,
-            # execute step: docker compose up -d
-            WorkerResult(success=True, message="Started"),
-        ]
+        # Shell 调用：使用 return_value 默认成功，特殊情况单独处理
+        def mock_shell_execute(action: str, args: dict[str, object]) -> WorkerResult:
+            cmd = args.get("command", "")
+            if isinstance(cmd, str):
+                if "test -d" in cmd:
+                    # check exists: 项目不存在
+                    return WorkerResult(success=True, data={"stdout": "NOT_EXISTS"}, message="Checked")
+                elif "docker compose ps" in cmd:
+                    # 验证：服务运行中
+                    return WorkerResult(success=True, message='{"Name":"app","State":"running"}')
+            # 默认：所有其他命令成功
+            return WorkerResult(success=True, message="ok", data={"stdout": ""})
+
+        mock_shell_worker.execute.return_value = WorkerResult(success=True, message="ok", data={"stdout": ""})
+        mock_shell_worker.execute.side_effect = mock_shell_execute
 
         with patch("os.path.exists", return_value=False):
             result = await deploy_worker.execute(
@@ -251,6 +279,57 @@ class TestDeploySuccess:
         assert result.success is True
         assert "部署完成" in result.message
         assert result.task_completed is True
+
+    @pytest.mark.asyncio
+    async def test_empty_command_steps_are_skipped(
+        self,
+        mock_http_worker: MagicMock,
+        mock_shell_worker: MagicMock,
+        mock_llm_client: MagicMock,
+    ) -> None:
+        """测试部署计划中的空命令步骤会被跳过"""
+        deploy_worker = DeployWorker(mock_http_worker, mock_shell_worker, mock_llm_client)
+
+        mock_http_worker.execute.side_effect = [
+            WorkerResult(success=True, data={"content": "# Test Project"}, message="README"),
+            WorkerResult(
+                success=True,
+                data={"key_files": "docker-compose.yml, README.md"},
+                message="Files",
+            ),
+        ]
+
+        plan_response = {
+            "thinking": ["过滤空命令步骤"],
+            "project_type": "docker",
+            "steps": [
+                {"description": "空步骤", "command": "   "},
+                {"description": "启动服务", "command": "docker compose up -d"},
+            ],
+            "notes": "",
+        }
+        mock_llm_client.generate.return_value = json.dumps(plan_response)
+        mock_llm_client.parse_json_response.return_value = plan_response
+
+        def mock_shell_execute(action: str, args: dict[str, object]) -> WorkerResult:
+            cmd = args.get("command", "")
+            if isinstance(cmd, str):
+                if "test -d" in cmd:
+                    return WorkerResult(success=True, data={"stdout": "NOT_EXISTS"}, message="ok")
+                elif "docker compose ps" in cmd:
+                    return WorkerResult(success=True, message='{"State":"running"}')
+            return WorkerResult(success=True, message="ok", data={"stdout": ""})
+
+        mock_shell_worker.execute.side_effect = mock_shell_execute
+
+        with patch("os.path.exists", return_value=False):
+            result = await deploy_worker.execute(
+                "deploy",
+                {"repo_url": "https://github.com/test/repo"},
+            )
+
+        assert result.success is True
+        assert "已跳过 1 个空命令步骤" in result.message
 
 
 class TestDeployFailure:
@@ -395,7 +474,6 @@ class TestDeployStepFailure:
         mock_llm_client.generate = AsyncMock(side_effect=mock_generate)
 
         parse_call_count = 0
-        original_parse = mock_llm_client.parse_json_response
 
         def mock_parse(response: str) -> dict[str, object]:
             nonlocal parse_call_count
@@ -500,21 +578,17 @@ class TestDeployAlreadyCloned:
         mock_llm_client.generate.return_value = json.dumps(plan_response)
         mock_llm_client.parse_json_response.return_value = plan_response
 
-        env_result = WorkerResult(success=True, message="ok", data={"stdout": ""})
-        mock_shell_worker.execute.side_effect = [
-            # mkdir
-            WorkerResult(success=True, message="ok"),
-            # check exists - 返回 EXISTS（项目已存在）
-            WorkerResult(
-                success=True,
-                data={"stdout": "EXISTS"},
-                message="Checked",
-            ),
-            # collect_env_info: 5 calls
-            env_result, env_result, env_result, env_result, env_result,
-            # execute step
-            WorkerResult(success=True, message="Started"),
-        ]
+        def mock_shell_execute(action: str, args: dict[str, object]) -> WorkerResult:
+            cmd = args.get("command", "")
+            if isinstance(cmd, str):
+                if "test -d" in cmd:
+                    # 项目已存在
+                    return WorkerResult(success=True, data={"stdout": "EXISTS"}, message="ok")
+                elif "docker compose ps" in cmd:
+                    return WorkerResult(success=True, message='{"State":"running"}')
+            return WorkerResult(success=True, message="ok", data={"stdout": ""})
+
+        mock_shell_worker.execute.side_effect = mock_shell_execute
 
         with patch("os.path.exists", return_value=False):
             result = await deploy_worker.execute(

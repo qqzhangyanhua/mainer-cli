@@ -340,11 +340,12 @@ class ReactNodes:
         elif preprocessed_dict.get("intent") == "deploy":
             # 部署意图 - 直接使用一键部署
             repo_url = self._preprocessor.extract_repo_url(user_input)
+            target_dir = self._context.cwd
             if repo_url and self._workers.get("deploy"):
                 instruction = Instruction(
                     worker="deploy",
                     action="deploy",
-                    args={"repo_url": repo_url, "target_dir": "~/projects"},
+                    args={"repo_url": repo_url, "target_dir": target_dir},
                     risk_level="medium",
                 )
                 self._report_progress("reasoning", "✅ 生成一键部署指令")
@@ -353,7 +354,7 @@ class ReactNodes:
                 system_prompt = self._prompt_builder.build_deploy_prompt(
                     self._context,
                     repo_url=repo_url,
-                    target_dir="~/projects",
+                    target_dir=target_dir,
                     available_workers=self._workers,
                 )
                 user_prompt = f"Deploy this project: {user_input}"

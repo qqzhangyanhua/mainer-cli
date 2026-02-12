@@ -87,7 +87,7 @@ class DeployNodes:
         self._report_progress("clone", "📥 克隆仓库...")
 
         repo_url = state.get("repo_url", "")
-        target_dir = state.get("target_dir", "~/projects")
+        target_dir = state.get("target_dir", os.getcwd())
         dry_run = state.get("dry_run", False)
 
         result = await self._deploy.execute(

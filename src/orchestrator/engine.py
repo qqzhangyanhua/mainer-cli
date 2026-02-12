@@ -452,7 +452,7 @@ class OrchestratorEngine:
                     instruction = Instruction(
                         worker="deploy",
                         action="deploy",
-                        args={"repo_url": repo_url, "target_dir": "~/projects"},
+                        args={"repo_url": repo_url, "target_dir": self._context.cwd},
                         risk_level="medium",
                     )
                 else:

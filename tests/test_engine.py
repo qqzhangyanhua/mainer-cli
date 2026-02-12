@@ -196,3 +196,27 @@ class TestOrchestratorEngine:
 
             assert result == "Operation cancelled by user"
             callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_deploy_intent_uses_current_working_directory_as_target_dir(self) -> None:
+        """测试 deploy 意图默认使用当前工作目录作为 target_dir"""
+        config = OpsAIConfig()
+        config.safety.cli_max_risk = "medium"
+        engine = OrchestratorEngine(config)
+
+        with patch.object(
+            engine, "execute_instruction", new_callable=AsyncMock
+        ) as mock_execute:
+            mock_execute.return_value = WorkerResult(
+                success=True,
+                message="ok",
+                task_completed=True,
+            )
+
+            result = await engine.react_loop("帮我部署 https://github.com/test/repo")
+
+            assert result == "ok"
+            mock_execute.assert_called_once()
+            instruction = mock_execute.call_args.args[0]
+            assert instruction.worker == "deploy"
+            assert instruction.args.get("target_dir") == engine._context.cwd

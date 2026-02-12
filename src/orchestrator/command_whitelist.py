@@ -26,6 +26,16 @@ class CommandCheckResult:
     matched_rule: Optional[CommandRule] = None  # 匹配的规则
 
 
+def _extract_subcommand_and_args(
+    tokens: list[str], start_index: int
+) -> tuple[Optional[str], list[str]]:
+    """从 token 列表中提取子命令和参数"""
+    for i, token in enumerate(tokens[start_index:], start_index):
+        if not token.startswith("-"):
+            return token, tokens[i + 1:]
+    return None, tokens[start_index:]
+
+
 def parse_command(command: str) -> tuple[str, Optional[str], list[str]]:
     """解析命令，提取基础命令、子命令和参数
 
@@ -50,16 +60,14 @@ def parse_command(command: str) -> tuple[str, Optional[str], list[str]]:
     args: list[str] = []
 
     if len(tokens) > 1:
-        if base_command in {
+        # 兼容 docker compose 语法，统一为 docker-compose 规则匹配
+        if base_command == "docker" and tokens[1] == "compose":
+            base_command = "docker-compose"
+            subcommand, args = _extract_subcommand_and_args(tokens, 2)
+        elif base_command in {
             "docker", "docker-compose", "git", "systemctl", "apt", "yum", "npm", "pip"
         }:
-            for i, token in enumerate(tokens[1:], 1):
-                if not token.startswith("-"):
-                    subcommand = token
-                    args = tokens[i + 1:]
-                    break
-            else:
-                args = tokens[1:]
+            subcommand, args = _extract_subcommand_and_args(tokens, 1)
         else:
             args = tokens[1:]
 
@@ -67,7 +75,43 @@ def parse_command(command: str) -> tuple[str, Optional[str], list[str]]:
 
 
 def check_dangerous_patterns(command: str) -> Optional[str]:
-    """检查危险模式"""
+    """检查危险模式
+    
+    特殊处理：
+    - echo 命令允许使用 $() 和重定向（用于生成配置文件）
+    - 但禁止写入系统关键目录，仍然检查其他危险模式
+    """
+    command_stripped = command.strip()
+    
+    # 特殊处理：echo 命令允许 $() 和重定向（但有限制）
+    if command_stripped.startswith("echo "):
+        # 检查是否尝试写入危险的系统目录
+        # 注意：检查重定向目标（> 或 >> 后面的路径），而不是命令中所有路径
+        dangerous_write_paths = [
+            "/etc/", "/sys/", "/proc/", "/dev/", 
+            "/root/", "/boot/", "/usr/", "/var/",
+            "/bin/", "/sbin/", "/lib/"
+        ]
+        
+        # 检查重定向目标路径（简单匹配 > path 或 >> path）
+        import re as _re
+        redirect_match = _re.search(r'>\s*([/\w.-]+)', command)
+        if redirect_match:
+            redirect_target = redirect_match.group(1)
+            for dangerous_path in dangerous_write_paths:
+                if redirect_target.startswith(dangerous_path):
+                    return f"Dangerous file path detected: '{dangerous_path}'"
+        
+        # 检查其他特别危险的模式
+        dangerous_for_echo = ["&&", "||", ";", "`", "&", "\\n", "\\r", "${"]
+        for pattern in dangerous_for_echo:
+            if pattern in command:
+                return f"Dangerous pattern detected: '{pattern}'"
+        
+        # 允许 $() 和 > >> 在 echo 中使用（写入当前目录的文件）
+        return None
+    
+    # 其他命令：正常检查所有危险模式
     for pattern in DANGEROUS_PATTERNS:
         if pattern in command:
             if pattern == "|":

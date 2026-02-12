@@ -109,9 +109,11 @@ class DeployWorker(BaseWorker):
         if not isinstance(repo_url, str):
             return WorkerResult(success=False, message="repo_url parameter is required")
 
-        target_dir = args.get("target_dir", "~/projects")
-        if not isinstance(target_dir, str):
-            target_dir = "~/projects"
+        target_dir = args.get("target_dir")
+        if not isinstance(target_dir, str) or not target_dir.strip():
+            target_dir = os.getcwd()
+        else:
+            target_dir = target_dir.strip()
 
         dry_run = args.get("dry_run", False)
         if isinstance(dry_run, str):
@@ -156,7 +158,7 @@ class DeployWorker(BaseWorker):
         self._report_progress("deploy", "📦 Step 2/4: 克隆仓库...")
         steps_log.append("📦 Step 2/4: 克隆仓库...")
 
-        target_dir = os.path.expanduser(target_dir)
+        target_dir = os.path.abspath(os.path.expanduser(target_dir))
         clone_path = os.path.join(target_dir, repo)
         safe_target_dir = shlex.quote(target_dir)
         safe_clone_path = shlex.quote(clone_path)
@@ -236,11 +238,42 @@ class DeployWorker(BaseWorker):
             project_dir=clone_path,
         )
 
-        if not deploy_steps:
+        normalized_steps: list[dict[str, str]] = []
+        skipped_empty_commands = 0
+        for raw_step in deploy_steps:
+            if not isinstance(raw_step, dict):
+                continue
+            command = raw_step.get("command", "")
+            if not isinstance(command, str) or not command.strip():
+                skipped_empty_commands += 1
+                continue
+
+            command = command.strip()
+            description = raw_step.get("description", "")
+            if not isinstance(description, str) or not description.strip():
+                description = command
+            else:
+                description = description.strip()
+
+            normalized_steps.append(
+                {
+                    "description": description,
+                    "command": command,
+                }
+            )
+
+        if not normalized_steps:
             return WorkerResult(
                 success=False,
-                message="无法生成部署计划。请检查项目结构或手动部署。",
+                message="无法生成部署计划：未发现可执行命令（命令为空）。请检查项目结构或手动部署。",
             )
+        deploy_steps = normalized_steps
+
+        if skipped_empty_commands > 0:
+            self._report_progress(
+                "deploy", f"  ⚠️ 已跳过 {skipped_empty_commands} 个空命令步骤",
+            )
+            steps_log.append(f"  ⚠️ 已跳过 {skipped_empty_commands} 个空命令步骤")
 
         if thinking:
             steps_log.append("  💭 AI 思考过程:")
@@ -299,8 +332,16 @@ class DeployWorker(BaseWorker):
                 simulated=bool(dry_run),
             )
 
-        # ========== Step 5: 验证部署（Docker 项目）==========
-        if project_type == "docker" and not dry_run:
+        # ========== Step 5: 验证部署 ==========
+        # 检测是否使用了 Docker 部署（不仅限于 project_type == "docker"）
+        uses_docker = any(
+            "docker run" in step.get("command", "") or
+            "docker compose" in step.get("command", "") or
+            "docker-compose" in step.get("command", "")
+            for step in deploy_steps
+        )
+
+        if uses_docker and not dry_run:
             self._report_progress("deploy", "\n🔍 Step 5/5: 验证部署...")
             verify_success, verify_message, container_info = (
                 await self._executor.verify_docker_deployment(
@@ -316,7 +357,8 @@ class DeployWorker(BaseWorker):
                 summary += "\n\n💡 可能的解决方法:"
                 summary += "\n1. 检查 docker logs 查看容器日志"
                 summary += "\n2. 确认端口没有被占用"
-                summary += f"\n3. 手动进入项目目录排查问题: cd {clone_path}"
+                summary += "\n3. 检查环境变量是否正确配置"
+                summary += f"\n4. 手动进入项目目录排查问题: cd {clone_path}"
                 return WorkerResult(
                     success=False,
                     data=cast(

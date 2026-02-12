@@ -80,6 +80,7 @@ COMMAND_WHITELIST: list[CommandRule] = [
     CommandRule("printenv", risk_level="safe", description="打印环境变量"),
     CommandRule("echo", risk_level="safe", description="输出文本"),
     CommandRule("printf", risk_level="safe", description="格式化输出"),
+    CommandRule("open", risk_level="medium", description="打开应用或文件（如 Docker Desktop）"),
     CommandRule("pwd", risk_level="safe", description="当前目录"),
     CommandRule("history", risk_level="safe", description="命令历史"),
     CommandRule("dmesg", risk_level="safe", description="内核消息"),

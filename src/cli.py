@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Optional
 
 import typer
@@ -83,7 +84,9 @@ def query(
 @app.command()
 def deploy(
     repo_url: str = typer.Argument(..., help="GitHub 仓库 URL"),
-    target_dir: str = typer.Option("~/projects", "--target-dir", "-t", help="部署目标目录"),
+    target_dir: Optional[str] = typer.Option(
+        None, "--target-dir", "-t", help="部署目标目录（默认：当前工作目录）"
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", "-d", help="模拟执行，不实际部署"),
 ) -> None:
     """一键部署 GitHub 项目
@@ -95,8 +98,12 @@ def deploy(
         opsai deploy https://github.com/user/my-app --target-dir ~/myprojects
         opsai deploy https://github.com/user/my-app --dry-run
     """
+    resolved_target_dir = target_dir.strip() if isinstance(target_dir, str) else ""
+    if not resolved_target_dir:
+        resolved_target_dir = os.getcwd()
+
     with console.status("[bold green]正在部署项目..."):
-        result = asyncio.run(_deploy_project(repo_url, target_dir, dry_run))
+        result = asyncio.run(_deploy_project(repo_url, resolved_target_dir, dry_run))
 
     if result.success:
         console.print(Panel(result.message, title="✅ 部署成功", border_style="green"))

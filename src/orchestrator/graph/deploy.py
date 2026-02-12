@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Callable, Literal, Optional
 
 from langgraph.graph import END, START, StateGraph
@@ -124,7 +125,7 @@ class DeployGraph:
     async def run(
         self,
         repo_url: str,
-        target_dir: str = "~/projects",
+        target_dir: Optional[str] = None,
         dry_run: bool = False,
     ) -> DeployState:
         """执行部署工作流
@@ -137,9 +138,10 @@ class DeployGraph:
         Returns:
             最终状态
         """
+        resolved_target_dir = target_dir if target_dir and target_dir.strip() else os.getcwd()
         initial_state: DeployState = {
             "repo_url": repo_url,
-            "target_dir": target_dir,
+            "target_dir": resolved_target_dir,
             "dry_run": dry_run,
             "steps_completed": [],
             "current_step": "analyze",

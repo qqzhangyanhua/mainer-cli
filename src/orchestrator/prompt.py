@@ -119,7 +119,7 @@ Worker Details:
   - Use when user asks: "是干嘛的", "有什么用", "是什么", "解释", "分析", "explain", "what is"
 
 - deploy.deploy: 一键部署 GitHub 项目（自动完成分析→克隆→配置→启动）
-  - args: {{"repo_url": "https://github.com/owner/repo", "target_dir": "~/projects"}}
+  - args: {{"repo_url": "https://github.com/owner/repo", "target_dir": "<当前工作目录>"}}
   - risk_level: medium
   - 示例: {{"worker": "deploy", "action": "deploy", "args": {{"repo_url": "https://github.com/user/app"}}, "risk_level": "medium"}}
 
@@ -260,7 +260,7 @@ Output format:
         self,
         context: EnvironmentContext,
         repo_url: str,
-        target_dir: str = "~/projects",
+        target_dir: Optional[str] = None,
         available_workers: Optional[dict[str, BaseWorker]] = None,
     ) -> str:
         """构建部署专用系统提示
@@ -273,6 +273,9 @@ Output format:
         Returns:
             部署系统提示文本
         """
+        if target_dir is None or not target_dir.strip():
+            target_dir = context.cwd
+
         env_context = context.to_prompt_context()
         worker_caps = self.get_worker_capabilities(available_workers)
 
