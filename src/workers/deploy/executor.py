@@ -133,22 +133,24 @@ class DeployExecutor:
                 )
 
             self._report_progress("deploy", "    ⚠️ 命令失败，启动 AI 自主诊断...")
-            fixed, diagnose_msg, fix_commands, new_command, cause = (
-                await self._diagnoser.react_diagnose_loop(
-                    command=current_command,
-                    error=result.message,
-                    project_type=project_type,
-                    project_dir=project_dir,
-                    known_files=known_files,
-                    confirmation_callback=self._confirmation_callback,
-                    max_iterations=3,
-                )
+            (
+                fixed,
+                diagnose_msg,
+                fix_commands,
+                new_command,
+                cause,
+            ) = await self._diagnoser.react_diagnose_loop(
+                command=current_command,
+                error=result.message,
+                project_type=project_type,
+                project_dir=project_dir,
+                known_files=known_files,
+                confirmation_callback=self._confirmation_callback,
+                max_iterations=3,
             )
 
             if not fixed:
-                error_detail = (
-                    f"✗ {description}\n命令: {current_command}\n错误: {first_error}"
-                )
+                error_detail = f"✗ {description}\n命令: {current_command}\n错误: {first_error}"
                 if diagnose_msg:
                     error_detail += f"\n{diagnose_msg}"
                 return False, error_detail
@@ -227,9 +229,7 @@ class DeployExecutor:
             )
 
             if check_result.success and container_name in check_result.message:
-                status_match = re.search(
-                    rf"{container_name}\s+(.+)", check_result.message
-                )
+                status_match = re.search(rf"{container_name}\s+(.+)", check_result.message)
                 status = status_match.group(1) if status_match else "running"
 
                 if "Up" in status:
@@ -242,9 +242,7 @@ class DeployExecutor:
                         {"container_name": container_name, "status": status},
                     )
 
-            self._report_progress(
-                "deploy", f"    ⚠️ 容器 {container_name} 未运行，检查原因..."
-            )
+            self._report_progress("deploy", f"    ⚠️ 容器 {container_name} 未运行，检查原因...")
 
             all_containers_result = await self._shell.execute(
                 "execute_command",
@@ -264,12 +262,8 @@ class DeployExecutor:
                     "execute_command",
                     {"command": f"docker logs --tail 50 {container_name} 2>&1"},
                 )
-                container_logs = (
-                    logs_result.message if logs_result.success else "无法获取日志"
-                )
-                error_message = (
-                    f"容器 {container_name} 已退出。\n日志:\n{container_logs[:500]}"
-                )
+                container_logs = logs_result.message if logs_result.success else "无法获取日志"
+                error_message = f"容器 {container_name} 已退出。\n日志:\n{container_logs[:500]}"
             else:
                 error_message = f"容器 {container_name} 不存在"
 
@@ -281,16 +275,20 @@ class DeployExecutor:
                     f"    🔧 尝试修复 (尝试 {attempt + 1}/{max_fix_attempts})...",
                 )
 
-                fixed, diagnose_msg, fix_commands, new_command, _cause = (
-                    await self._diagnoser.react_diagnose_loop(
-                        command=docker_run_command,
-                        error=error_message,
-                        project_type=project_type,
-                        project_dir=project_dir,
-                        known_files=known_files,
-                        confirmation_callback=self._confirmation_callback,
-                        max_iterations=2,
-                    )
+                (
+                    fixed,
+                    diagnose_msg,
+                    fix_commands,
+                    new_command,
+                    _cause,
+                ) = await self._diagnoser.react_diagnose_loop(
+                    command=docker_run_command,
+                    error=error_message,
+                    project_type=project_type,
+                    project_dir=project_dir,
+                    known_files=known_files,
+                    confirmation_callback=self._confirmation_callback,
+                    max_iterations=2,
                 )
 
                 if fixed:
@@ -311,9 +309,7 @@ class DeployExecutor:
                     await asyncio.sleep(2)
                     continue
                 else:
-                    self._report_progress(
-                        "deploy", f"    ❌ 无法自动修复: {diagnose_msg[:100]}"
-                    )
+                    self._report_progress("deploy", f"    ❌ 无法自动修复: {diagnose_msg[:100]}")
 
             return (
                 False,
@@ -373,16 +369,20 @@ class DeployExecutor:
                     f"    🔧 尝试修复 (尝试 {attempt + 1}/{max_fix_attempts})...",
                 )
 
-                fixed, diagnose_msg, fix_commands, new_command, _cause = (
-                    await self._diagnoser.react_diagnose_loop(
-                        command=docker_run_command,
-                        error=error_message,
-                        project_type=project_type,
-                        project_dir=project_dir,
-                        known_files=known_files,
-                        confirmation_callback=self._confirmation_callback,
-                        max_iterations=2,
-                    )
+                (
+                    fixed,
+                    diagnose_msg,
+                    fix_commands,
+                    new_command,
+                    _cause,
+                ) = await self._diagnoser.react_diagnose_loop(
+                    command=docker_run_command,
+                    error=error_message,
+                    project_type=project_type,
+                    project_dir=project_dir,
+                    known_files=known_files,
+                    confirmation_callback=self._confirmation_callback,
+                    max_iterations=2,
                 )
 
                 if fixed:
@@ -402,9 +402,7 @@ class DeployExecutor:
                     await asyncio.sleep(2)
                     continue
                 else:
-                    self._report_progress(
-                        "deploy", f"    ❌ 无法自动修复: {diagnose_msg[:100]}"
-                    )
+                    self._report_progress("deploy", f"    ❌ 无法自动修复: {diagnose_msg[:100]}")
 
         return False, f"docker compose 服务启动失败: {error_message[:200]}", None
 

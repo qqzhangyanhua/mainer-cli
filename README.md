@@ -76,6 +76,21 @@ pip install opsai
 uv tool install opsai
 ```
 
+### 1.1 克隆仓库后一键安装（推荐开发/自托管）
+```bash
+git clone https://github.com/yourusername/opsai.git
+cd opsai
+# 方式 A
+python3 install.py
+# 方式 B
+./install.sh
+```
+
+说明：
+- 脚本会创建 `~/.opsai/venv` 独立环境
+- 自动安装当前仓库并生成 `~/.local/bin/opsai`、`~/.local/bin/opsai-tui`
+- 若提示 PATH 未包含 `~/.local/bin`，按提示追加到 `~/.zshrc` 或 `~/.bashrc`
+
 ### 2. 启动
 ```bash
 opsai-tui

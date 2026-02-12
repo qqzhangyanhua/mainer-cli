@@ -22,7 +22,7 @@ class ContainerWorker(BaseWorker):
     - stop: 停止容器
     - start: 启动容器
     - stats: 获取资源统计
-    
+
     优势：
     - 无需 docker-py 依赖（减少 50MB）
     - 更直观的错误提示
@@ -50,7 +50,7 @@ class ContainerWorker(BaseWorker):
 
     async def _check_docker_available(self) -> tuple[bool, str]:
         """检查 Docker 是否可用
-        
+
         Returns:
             (是否可用, 错误消息)
         """
@@ -60,7 +60,7 @@ class ContainerWorker(BaseWorker):
         )
         if not result.success:
             return False, "Docker not found. Please install Docker."
-        
+
         # 检查 Docker daemon 是否运行
         result = await self._shell.execute(
             "execute_command",
@@ -68,7 +68,7 @@ class ContainerWorker(BaseWorker):
         )
         if not result.success:
             return False, "Cannot connect to Docker daemon. Is Docker running?"
-        
+
         return True, ""
 
     async def execute(
@@ -155,12 +155,14 @@ class ContainerWorker(BaseWorker):
                     continue
                 try:
                     container = json.loads(line)
-                    data.append({
-                        "id": container.get("ID", "")[:12],  # 短 ID
-                        "name": container.get("Names", ""),
-                        "status": container.get("Status", ""),
-                        "image": container.get("Image", ""),
-                    })
+                    data.append(
+                        {
+                            "id": container.get("ID", "")[:12],  # 短 ID
+                            "name": container.get("Names", ""),
+                            "status": container.get("Status", ""),
+                            "image": container.get("Image", ""),
+                        }
+                    )
                 except json.JSONDecodeError:
                     continue
 
@@ -214,10 +216,10 @@ class ContainerWorker(BaseWorker):
                 inspect_data = json.loads(raw_output)
                 if isinstance(inspect_data, list) and len(inspect_data) > 0:
                     container = inspect_data[0]
-                    
+
                     state = container.get("State", {})
                     config = container.get("Config", {})
-                    
+
                     data: dict[str, str | int] = {
                         "id": container.get("Id", "")[:12],
                         "name": container.get("Name", "").lstrip("/"),
@@ -452,18 +454,18 @@ class ContainerWorker(BaseWorker):
         if isinstance(raw_output, str) and raw_output.strip():
             try:
                 stats = json.loads(raw_output.strip())
-                
+
                 # 提取 CPU 百分比（如 "12.34%"）
                 cpu_str = stats.get("CPUPerc", "0%").rstrip("%")
                 try:
                     cpu_percent = int(float(cpu_str))
                 except ValueError:
                     cpu_percent = 0
-                
+
                 # 提取内存使用（如 "123.4MiB / 1.5GiB"）
                 mem_usage_str = stats.get("MemUsage", "0MiB / 0MiB")
                 mem_parts = mem_usage_str.split(" / ")
-                
+
                 def parse_memory(s: str) -> int:
                     """解析内存字符串为 MB"""
                     s = s.strip()
@@ -474,7 +476,7 @@ class ContainerWorker(BaseWorker):
                     elif s.endswith("KiB"):
                         return int(float(s.rstrip("KiB")) / 1024)
                     return 0
-                
+
                 mem_usage = parse_memory(mem_parts[0]) if len(mem_parts) > 0 else 0
                 mem_limit = parse_memory(mem_parts[1]) if len(mem_parts) > 1 else 0
 

@@ -260,14 +260,18 @@ class TestDeploySuccess:
             if isinstance(cmd, str):
                 if "test -d" in cmd:
                     # check exists: 项目不存在
-                    return WorkerResult(success=True, data={"stdout": "NOT_EXISTS"}, message="Checked")
+                    return WorkerResult(
+                        success=True, data={"stdout": "NOT_EXISTS"}, message="Checked"
+                    )
                 elif "docker compose ps" in cmd:
                     # 验证：服务运行中
                     return WorkerResult(success=True, message='{"Name":"app","State":"running"}')
             # 默认：所有其他命令成功
             return WorkerResult(success=True, message="ok", data={"stdout": ""})
 
-        mock_shell_worker.execute.return_value = WorkerResult(success=True, message="ok", data={"stdout": ""})
+        mock_shell_worker.execute.return_value = WorkerResult(
+            success=True, message="ok", data={"stdout": ""}
+        )
         mock_shell_worker.execute.side_effect = mock_shell_execute
 
         with patch("os.path.exists", return_value=False):
@@ -347,18 +351,14 @@ class TestDeployFailure:
 
         mock_http_worker.execute.side_effect = [
             WorkerResult(success=True, data={"content": "# Test"}, message="README"),
-            WorkerResult(
-                success=True, data={"key_files": "Dockerfile"}, message="Files"
-            ),
+            WorkerResult(success=True, data={"key_files": "Dockerfile"}, message="Files"),
         ]
 
         mock_shell_worker.execute.side_effect = [
             # mkdir
             WorkerResult(success=True, message="ok"),
             # check exists
-            WorkerResult(
-                success=True, data={"stdout": "NOT_EXISTS"}, message="Checked"
-            ),
+            WorkerResult(success=True, data={"stdout": "NOT_EXISTS"}, message="Checked"),
             # git clone fails
             WorkerResult(success=False, message="fatal: repository not found"),
         ]
@@ -383,9 +383,7 @@ class TestDeployFailure:
 
         mock_http_worker.execute.side_effect = [
             WorkerResult(success=True, data={"content": "# Test"}, message="README"),
-            WorkerResult(
-                success=True, data={"key_files": "README.md"}, message="Files"
-            ),
+            WorkerResult(success=True, data={"key_files": "README.md"}, message="Files"),
         ]
 
         # LLM 返回空计划
@@ -400,13 +398,15 @@ class TestDeployFailure:
             # mkdir
             WorkerResult(success=True, message="ok"),
             # check exists
-            WorkerResult(
-                success=True, data={"stdout": "NOT_EXISTS"}, message="Checked"
-            ),
+            WorkerResult(success=True, data={"stdout": "NOT_EXISTS"}, message="Checked"),
             # git clone
             WorkerResult(success=True, message="Cloned"),
             # collect_env_info: 5 calls
-            env_result, env_result, env_result, env_result, env_result,
+            env_result,
+            env_result,
+            env_result,
+            env_result,
+            env_result,
         ]
 
         with patch("os.path.exists", return_value=False):
@@ -505,9 +505,7 @@ class TestDeployStepFailure:
                 return WorkerResult(success=True, message="ok", data={"stdout": ""})
             # execute_with_retry 阶段的命令：失败
             if isinstance(cmd, str) and "docker compose" in cmd:
-                return WorkerResult(
-                    success=False, message="Error: unknown configuration error"
-                )
+                return WorkerResult(success=False, message="Error: unknown configuration error")
             # 其他命令默认成功
             return WorkerResult(success=True, message="ok", data={"stdout": ""})
 

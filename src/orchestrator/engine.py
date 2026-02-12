@@ -226,9 +226,7 @@ class OrchestratorEngine:
         """将 ConversationEntry 转换为 LangGraph 消息格式（委托到 graph_adapter）"""
         return build_graph_messages(history)
 
-    def _parse_graph_messages(
-        self, messages: list[dict[str, str]]
-    ) -> list[ConversationEntry]:
+    def _parse_graph_messages(self, messages: list[dict[str, str]]) -> list[ConversationEntry]:
         """从 LangGraph 消息历史解析 ConversationEntry（委托到 graph_adapter）"""
         return parse_graph_messages(messages)
 

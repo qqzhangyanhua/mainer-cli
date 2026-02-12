@@ -93,7 +93,11 @@ class TestProjectTypeIdentification:
             WorkerResult(success=True, message="Directory created"),
             WorkerResult(success=True, data={"stdout": "NOT_EXISTS"}, message="Checked"),
             WorkerResult(success=True, message="Cloned"),
-            env_result, env_result, env_result, env_result, env_result,
+            env_result,
+            env_result,
+            env_result,
+            env_result,
+            env_result,
             WorkerResult(success=True, message="Built"),
             WorkerResult(success=True, message="Running"),
             # 验证步骤
@@ -134,9 +138,7 @@ class TestProjectTypeIdentification:
         plan_response = {
             "thinking": ["docker-compose.yml 存在，优先识别为 docker 项目"],
             "project_type": "docker",  # 应该是 docker 而非 nodejs
-            "steps": [
-                {"description": "启动服务", "command": "docker compose up -d"}
-            ],
+            "steps": [{"description": "启动服务", "command": "docker compose up -d"}],
             "notes": "",
         }
         mock_llm_client.generate.return_value = json.dumps(plan_response)
@@ -147,7 +149,11 @@ class TestProjectTypeIdentification:
             WorkerResult(success=True, message="ok"),
             WorkerResult(success=True, data={"stdout": "NOT_EXISTS"}, message="ok"),
             WorkerResult(success=True, message="ok"),
-            env_result, env_result, env_result, env_result, env_result,
+            env_result,
+            env_result,
+            env_result,
+            env_result,
+            env_result,
         ]
 
         with patch("os.path.exists", return_value=False):
@@ -196,7 +202,11 @@ class TestProjectTypeIdentification:
             WorkerResult(success=True, message="ok"),
             WorkerResult(success=True, data={"stdout": "NOT_EXISTS"}, message="ok"),
             WorkerResult(success=True, message="ok"),
-            env_result, env_result, env_result, env_result, env_result,
+            env_result,
+            env_result,
+            env_result,
+            env_result,
+            env_result,
             WorkerResult(success=True, message="ok"),
             WorkerResult(success=True, message="ok"),
         ]
@@ -275,7 +285,11 @@ class TestEnvironmentVariableDetection:
             WorkerResult(success=True, message="ok"),
             WorkerResult(success=True, data={"stdout": "NOT_EXISTS"}, message="ok"),
             WorkerResult(success=True, message="ok"),
-            env_result, env_result, env_result, env_result, env_result,
+            env_result,
+            env_result,
+            env_result,
+            env_result,
+            env_result,
         ]
 
         with patch("os.path.exists", return_value=False):
@@ -287,4 +301,8 @@ class TestEnvironmentVariableDetection:
         assert result.success is True
         assert result.simulated is True
         # 验证部署计划包含了环境变量创建步骤
-        assert "环境变量" in result.message or ".env" in result.message or "SECRET_KEY" in result.message
+        assert (
+            "环境变量" in result.message
+            or ".env" in result.message
+            or "SECRET_KEY" in result.message
+        )

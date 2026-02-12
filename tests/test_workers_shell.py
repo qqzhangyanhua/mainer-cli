@@ -33,7 +33,8 @@ class TestShellWorker:
         )
 
         assert result.success is True
-        assert result.task_completed is True
+        # task_completed=False，让 ReAct 循环继续回到 LLM 生成自然语言回答
+        assert result.task_completed is False
         assert "Hello World" in result.message
 
     @pytest.mark.asyncio
@@ -144,6 +145,59 @@ class TestShellWorker:
         # 验证头尾部分被保留
         assert result.startswith("a" * TRUNCATE_HEAD)
         assert result.endswith("a" * TRUNCATE_TAIL)
+
+    @pytest.mark.asyncio
+    async def test_grep_no_match_not_error(self) -> None:
+        """测试 grep 无匹配时返回成功而非错误（exit code 1 是正常结果）"""
+        worker = ShellWorker()
+        result = await worker.execute(
+            "execute_command",
+            {"command": "grep 'UNLIKELY_STRING_XYZ_12345' /dev/null"},
+        )
+
+        assert result.success is True
+        assert result.task_completed is False
+        assert "(no matches found)" in result.message
+
+    @pytest.mark.asyncio
+    async def test_grep_pipe_no_match_not_error(self) -> None:
+        """测试管道中 grep 无匹配时返回成功"""
+        worker = ShellWorker()
+        result = await worker.execute(
+            "execute_command",
+            {"command": "echo hello | grep 'UNLIKELY_STRING_XYZ_12345'"},
+        )
+
+        assert result.success is True
+        assert result.task_completed is False
+
+    @pytest.mark.asyncio
+    async def test_grep_with_match_still_success(self) -> None:
+        """测试 grep 有匹配时仍然正常返回"""
+        worker = ShellWorker()
+        result = await worker.execute(
+            "execute_command",
+            {"command": "echo hello | grep hello"},
+        )
+
+        assert result.success is True
+        assert "hello" in result.message
+
+    def test_is_exit1_ok_simple_grep(self) -> None:
+        """测试 _is_exit1_ok 对简单 grep 命令"""
+        assert ShellWorker._is_exit1_ok("grep something file.txt") is True
+
+    def test_is_exit1_ok_pipe_grep(self) -> None:
+        """测试 _is_exit1_ok 对管道中的 grep"""
+        assert ShellWorker._is_exit1_ok("ps aux | grep nginx | grep -v grep") is True
+
+    def test_is_exit1_ok_non_grep(self) -> None:
+        """测试 _is_exit1_ok 对非 grep 命令"""
+        assert ShellWorker._is_exit1_ok("ls /nonexistent") is False
+
+    def test_is_exit1_ok_diff(self) -> None:
+        """测试 _is_exit1_ok 对 diff 命令"""
+        assert ShellWorker._is_exit1_ok("diff file1 file2") is True
 
     def test_truncate_preserves_head_tail(self) -> None:
         """测试截断保留头尾内容"""

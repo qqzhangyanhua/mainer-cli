@@ -73,13 +73,13 @@ class TestCLI:
     @patch("src.cli.OrchestratorEngine")
     @patch("src.cli.ConfigManager")
     @patch("src.cli.TemplateManager")
-    def test_template_run_blocks_high_risk_without_dry_run(
+    def test_template_run_allows_high_risk_with_approval(
         self,
         mock_template_manager_class: AsyncMock,
         mock_config_manager_class: AsyncMock,
         mock_engine_class: AsyncMock,
     ) -> None:
-        """测试模板高危操作在非 dry-run 下被拦截"""
+        """测试高危操作通过审批流程执行（不再直接阻止）"""
         mock_template_manager = mock_template_manager_class.return_value
         mock_template_manager.load_template.return_value = object()
         mock_template_manager.generate_instructions.return_value = [
@@ -103,9 +103,9 @@ class TestCLI:
 
         result = runner.invoke(app, ["template", "run", "disk_cleanup"])
 
-        assert result.exit_code == 1
-        assert "requires --dry-run first" in result.stdout
-        mock_engine.execute_instruction.assert_not_called()
+        # 高危操作现在会执行（通过审批），不再直接阻止
+        assert result.exit_code == 0
+        mock_engine.execute_instruction.assert_called_once()
 
     @patch("src.cli.OrchestratorEngine")
     @patch("src.cli.ConfigManager")

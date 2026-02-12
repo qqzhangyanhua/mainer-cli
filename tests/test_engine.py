@@ -67,9 +67,7 @@ class TestOrchestratorEngine:
             "messages": [],
         }
 
-        with patch.object(
-            engine._react_graph, "run", new_callable=AsyncMock
-        ) as mock_run:
+        with patch.object(engine._react_graph, "run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = mock_state
 
             result = await engine.react_loop_graph("检查磁盘")
@@ -87,9 +85,7 @@ class TestOrchestratorEngine:
             "messages": [],
         }
 
-        with patch.object(
-            engine._react_graph, "run", new_callable=AsyncMock
-        ) as mock_run:
+        with patch.object(engine._react_graph, "run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = mock_state
 
             await engine.react_loop_graph("无限任务", max_iterations=5)
@@ -108,9 +104,7 @@ class TestOrchestratorEngine:
             "messages": [],
         }
 
-        with patch.object(
-            engine._react_graph, "run", new_callable=AsyncMock
-        ) as mock_run:
+        with patch.object(engine._react_graph, "run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = mock_state
 
             result = await engine.react_loop_graph("高危操作")
@@ -120,9 +114,7 @@ class TestOrchestratorEngine:
     @pytest.mark.asyncio
     async def test_react_loop_graph_error_handling(self, engine: OrchestratorEngine) -> None:
         """测试 LangGraph 错误处理"""
-        with patch.object(
-            engine._react_graph, "run", new_callable=AsyncMock
-        ) as mock_run:
+        with patch.object(engine._react_graph, "run", new_callable=AsyncMock) as mock_run:
             mock_run.side_effect = RuntimeError("graph failed")
 
             result = await engine.react_loop_graph("测试错误")
@@ -141,9 +133,7 @@ class TestOrchestratorEngine:
             "messages": [],
         }
 
-        with patch.object(
-            engine._react_graph, "run", new_callable=AsyncMock
-        ) as mock_run:
+        with patch.object(engine._react_graph, "run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = mock_state
 
             history = []
@@ -161,9 +151,7 @@ class TestOrchestratorEngine:
             "messages": [],
         }
 
-        with patch.object(
-            engine._react_graph, "resume", new_callable=AsyncMock
-        ) as mock_resume:
+        with patch.object(engine._react_graph, "resume", new_callable=AsyncMock) as mock_resume:
             mock_resume.return_value = mock_state
 
             result = await engine.resume_react_loop("session-1", approval_granted=True)

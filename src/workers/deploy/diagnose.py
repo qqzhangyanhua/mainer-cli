@@ -108,13 +108,12 @@ class DeployDiagnoser:
         error: str,
     ) -> Optional[dict[str, object]]:
         """处理被拦截的命令 - 智能替代方案"""
-        
+
         # 场景1：Python 生成密钥命令包含分号被拦截
         if "python" in command and ("secrets" in command or "random" in command):
             if "';'" in error or "dangerous pattern" in error.lower():
                 self._report_progress(
-                    "deploy",
-                    "    🔄 检测到 Python 命令被拦截（包含分号），尝试 openssl 替代..."
+                    "deploy", "    🔄 检测到 Python 命令被拦截（包含分号），尝试 openssl 替代..."
                 )
                 # 替换为 openssl 命令
                 # 检测是创建 .env 文件还是只生成密钥
@@ -125,7 +124,7 @@ class DeployDiagnoser:
                         "thinking": [
                             "观察：Python 命令包含分号被安全系统拦截",
                             "分析：这是生成 SECRET_KEY 并写入 .env 的命令",
-                            "决策：使用 openssl rand -hex 32 替代，避免分号"
+                            "决策：使用 openssl rand -hex 32 替代，避免分号",
                         ],
                         "new_command": "echo SECRET_KEY=$(openssl rand -hex 32) > .env",
                         "cause": "Python 命令被拦截，已改用 openssl 生成密钥",
@@ -137,21 +136,18 @@ class DeployDiagnoser:
                         "thinking": [
                             "观察：Python 命令包含分号被安全系统拦截",
                             "分析：这是生成随机密钥的命令",
-                            "决策：使用 openssl rand -hex 32 替代"
+                            "决策：使用 openssl rand -hex 32 替代",
                         ],
                         "new_command": "openssl rand -hex 32",
                         "cause": "Python 命令被拦截，已改用 openssl",
                     }
-        
+
         # 场景2：包含 && 或 || 的命令链被拦截
         if "&&" in command or "||" in command:
             if "'&&'" in error or "dangerous pattern" in error.lower():
                 # 尝试分解为单独的命令
-                self._report_progress(
-                    "deploy",
-                    "    🔄 检测到命令链被拦截，尝试分解为独立命令..."
-                )
-                
+                self._report_progress("deploy", "    🔄 检测到命令链被拦截，尝试分解为独立命令...")
+
                 # 简单分解（实际应该更智能）
                 if "&&" in command:
                     commands = [cmd.strip() for cmd in command.split("&&")]
@@ -159,25 +155,24 @@ class DeployDiagnoser:
                     commands = [cmd.strip() for cmd in command.split("||")[:1]]  # 只取第一个
                 else:
                     commands = []
-                
+
                 if commands:
                     return {
                         "action": "fix",
                         "thinking": [
                             "观察：命令链包含 && 或 || 被安全系统拦截",
-                            "决策：分解为独立命令逐个执行"
+                            "决策：分解为独立命令逐个执行",
                         ],
                         "commands": commands,
                         "cause": "命令链被拦截，已分解为独立命令",
                     }
-        
+
         # 场景3：包含重定向的命令被拦截（但实际上 > 和 >> 在某些情况下是允许的）
         # 这里不处理，让 LLM 处理更复杂的情况
-        
+
         # 无法自动处理
         self._report_progress(
-            "deploy",
-            "    ⚠️ 命令被安全系统拦截，无法自动替代，将使用 LLM 诊断..."
+            "deploy", "    ⚠️ 命令被安全系统拦截，无法自动替代，将使用 LLM 诊断..."
         )
         return None
 
@@ -310,9 +305,7 @@ class DeployDiagnoser:
                                         collected_info.append(f"用户拒绝执行: {cmd}")
                                         continue
                                 else:
-                                    collected_info.append(
-                                        f"跳过破坏性命令（需用户确认）: {cmd}"
-                                    )
+                                    collected_info.append(f"跳过破坏性命令（需用户确认）: {cmd}")
                                     continue
 
                             self._report_progress("deploy", f"    🔧 修复: {cmd}")
@@ -400,11 +393,33 @@ class DeployDiagnoser:
     def is_safe_read_command(cmd: str) -> bool:
         """检查是否是安全的只读命令"""
         safe_prefixes = [
-            "ls", "cat", "head", "tail", "grep", "find", "pwd", "echo",
-            "docker ps", "docker logs", "docker inspect", "docker images",
-            "ps ", "ps aux", "env", "printenv", "which", "whereis",
-            "file ", "stat ", "du ", "df ", "free", "uname",
-            "python --version", "node --version", "docker --version",
+            "ls",
+            "cat",
+            "head",
+            "tail",
+            "grep",
+            "find",
+            "pwd",
+            "echo",
+            "docker ps",
+            "docker logs",
+            "docker inspect",
+            "docker images",
+            "ps ",
+            "ps aux",
+            "env",
+            "printenv",
+            "which",
+            "whereis",
+            "file ",
+            "stat ",
+            "du ",
+            "df ",
+            "free",
+            "uname",
+            "python --version",
+            "node --version",
+            "docker --version",
         ]
         cmd_lower = cmd.lower().strip()
         return any(cmd_lower.startswith(prefix) for prefix in safe_prefixes)
@@ -413,12 +428,25 @@ class DeployDiagnoser:
     def is_destructive_command(cmd: str) -> bool:
         """检查是否是破坏性命令（需要用户确认）"""
         destructive_patterns = [
-            "rm ", "rm -", "rmdir", "delete",
-            "kill ", "kill -", "pkill", "killall",
-            "sudo ", "chmod ", "chown ",
-            "docker rm", "docker rmi", "docker stop", "docker kill",
-            "> ", ">> ",
-            "mv ", "cp -f",
+            "rm ",
+            "rm -",
+            "rmdir",
+            "delete",
+            "kill ",
+            "kill -",
+            "pkill",
+            "killall",
+            "sudo ",
+            "chmod ",
+            "chown ",
+            "docker rm",
+            "docker rmi",
+            "docker stop",
+            "docker kill",
+            "> ",
+            ">> ",
+            "mv ",
+            "cp -f",
         ]
         cmd_lower = cmd.lower().strip()
         return any(pattern in cmd_lower for pattern in destructive_patterns)

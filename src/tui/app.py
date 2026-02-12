@@ -9,6 +9,7 @@ from typing import cast
 
 try:
     import pyperclip
+
     HAS_CLIPBOARD = True
 except ImportError:
     HAS_CLIPBOARD = False
@@ -504,7 +505,7 @@ class OpsAIApp(App[str]):
                         command_shown = True
                 elif line.startswith("Output:"):
                     continue
-                elif line.startswith("Error:"):
+                elif line.startswith("Error:") or line.startswith("Stderr:"):
                     continue
                 elif line.startswith("Exit code:"):
                     continue
@@ -551,7 +552,9 @@ class OpsAIApp(App[str]):
             self._handle_verbose_command(parts[1:] if len(parts) > 1 else [])
             return True
         if command == "history":
-            show_history_summary(history, self._session_history, parts[1:] if len(parts) > 1 else [])
+            show_history_summary(
+                history, self._session_history, parts[1:] if len(parts) > 1 else []
+            )
             return True
         if command == "pwd":
             cwd = format_path(Path.cwd())

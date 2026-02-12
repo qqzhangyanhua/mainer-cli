@@ -34,7 +34,9 @@ COMMAND_WHITELIST: list[CommandRule] = [
     CommandRule("file", risk_level="safe", description="查看文件类型"),
     CommandRule("stat", risk_level="safe", description="查看文件状态"),
     CommandRule("test", risk_level="safe", description="测试路径/条件"),
-    CommandRule("find", risk_level="safe", blocked_flags=["-delete", "-exec"], description="查找文件"),
+    CommandRule(
+        "find", risk_level="safe", blocked_flags=["-delete", "-exec"], description="查找文件"
+    ),
     CommandRule("locate", risk_level="safe", description="快速定位文件"),
     CommandRule("which", risk_level="safe", description="查找命令路径"),
     CommandRule("whereis", risk_level="safe", description="查找命令位置"),
@@ -45,7 +47,9 @@ COMMAND_WHITELIST: list[CommandRule] = [
     CommandRule("egrep", risk_level="safe", description="扩展正则搜索"),
     CommandRule("fgrep", risk_level="safe", description="固定字符串搜索"),
     CommandRule("awk", risk_level="safe", description="文本处理"),
-    CommandRule("sed", risk_level="safe", blocked_flags=["-i"], description="流编辑器（禁止原地修改）"),
+    CommandRule(
+        "sed", risk_level="safe", blocked_flags=["-i"], description="流编辑器（禁止原地修改）"
+    ),
     CommandRule("sort", risk_level="safe", description="排序"),
     CommandRule("uniq", risk_level="safe", description="去重"),
     CommandRule("cut", risk_level="safe", description="列切割"),
@@ -170,7 +174,11 @@ COMMAND_WHITELIST: list[CommandRule] = [
     CommandRule("git", "rebase", risk_level="medium", description="变基"),
     CommandRule("git", "push", risk_level="high", description="推送到远程"),
     CommandRule(
-        "git", "reset", risk_level="high", blocked_flags=["--hard"], description="重置（禁止 --hard）"
+        "git",
+        "reset",
+        risk_level="high",
+        blocked_flags=["--hard"],
+        description="重置（禁止 --hard）",
     ),
     CommandRule("git", "clean", risk_level="high", description="清理未跟踪文件"),
     # ========== Systemd 服务管理 ==========
@@ -190,7 +198,7 @@ COMMAND_WHITELIST: list[CommandRule] = [
     CommandRule("systemctl", "disable", risk_level="high", description="禁用服务"),
     CommandRule("systemctl", "mask", risk_level="high", description="屏蔽服务"),
     CommandRule("systemctl", "unmask", risk_level="high", description="取消屏蔽"),
-    # ========== 包管理（只读）==========
+    # ========== 包管理（查询 - 只读）==========
     CommandRule("apt", "list", risk_level="safe", description="列出包"),
     CommandRule("apt", "show", risk_level="safe", description="包详情"),
     CommandRule("apt", "search", risk_level="safe", description="搜索包"),
@@ -207,16 +215,66 @@ COMMAND_WHITELIST: list[CommandRule] = [
     CommandRule("pip", "list", risk_level="safe", description="Python 包列表"),
     CommandRule("pip", "show", risk_level="safe", description="Python 包详情"),
     CommandRule("pip", "freeze", risk_level="safe", description="Python 依赖"),
+    CommandRule("pip3", "list", risk_level="safe", description="Python3 包列表"),
+    CommandRule("pip3", "show", risk_level="safe", description="Python3 包详情"),
+    CommandRule("pip3", "freeze", risk_level="safe", description="Python3 依赖"),
     CommandRule("npm", "list", risk_level="safe", description="Node 包列表"),
     CommandRule("npm", "view", risk_level="safe", description="包详情"),
     CommandRule("npm", "outdated", risk_level="safe", description="过期包"),
+    CommandRule("brew", "list", risk_level="safe", description="Homebrew 已安装包"),
+    CommandRule("brew", "info", risk_level="safe", description="Homebrew 包信息"),
+    CommandRule("brew", "search", risk_level="safe", description="Homebrew 搜索包"),
+    CommandRule("brew", "doctor", risk_level="safe", description="Homebrew 诊断"),
+    CommandRule("brew", "config", risk_level="safe", description="Homebrew 配置"),
+    CommandRule("brew", "outdated", risk_level="safe", description="Homebrew 过期包"),
+    CommandRule("dnf", "list", risk_level="safe", description="DNF 列出包"),
+    CommandRule("dnf", "info", risk_level="safe", description="DNF 包信息"),
+    CommandRule("dnf", "search", risk_level="safe", description="DNF 搜索包"),
+    # ========== 包管理（安装/更新/卸载）==========
+    CommandRule("brew", "install", risk_level="medium", description="Homebrew 安装包"),
+    CommandRule("brew", "uninstall", risk_level="medium", description="Homebrew 卸载包"),
+    CommandRule("brew", "upgrade", risk_level="medium", description="Homebrew 升级包"),
+    CommandRule("brew", "update", risk_level="medium", description="Homebrew 更新索引"),
+    CommandRule("brew", "tap", risk_level="medium", description="Homebrew 添加源"),
+    CommandRule("brew", "untap", risk_level="medium", description="Homebrew 移除源"),
+    CommandRule("brew", "services", risk_level="medium", description="Homebrew 服务管理"),
+    CommandRule("apt", "install", risk_level="medium", description="APT 安装包"),
+    CommandRule("apt", "remove", risk_level="medium", description="APT 卸载包"),
+    CommandRule("apt", "update", risk_level="medium", description="APT 更新索引"),
+    CommandRule("apt", "upgrade", risk_level="medium", description="APT 升级包"),
+    CommandRule("apt", "autoremove", risk_level="medium", description="APT 自动清理"),
+    CommandRule("apt-get", "install", risk_level="medium", description="APT 安装包"),
+    CommandRule("apt-get", "remove", risk_level="medium", description="APT 卸载包"),
+    CommandRule("apt-get", "update", risk_level="medium", description="APT 更新索引"),
+    CommandRule("apt-get", "upgrade", risk_level="medium", description="APT 升级包"),
+    CommandRule("apt-get", "autoremove", risk_level="medium", description="APT 自动清理"),
+    CommandRule("yum", "install", risk_level="medium", description="YUM 安装包"),
+    CommandRule("yum", "remove", risk_level="medium", description="YUM 卸载包"),
+    CommandRule("yum", "update", risk_level="medium", description="YUM 更新包"),
+    CommandRule("dnf", "install", risk_level="medium", description="DNF 安装包"),
+    CommandRule("dnf", "remove", risk_level="medium", description="DNF 卸载包"),
+    CommandRule("dnf", "update", risk_level="medium", description="DNF 更新包"),
+    CommandRule("pip", "install", risk_level="medium", description="Python 安装包"),
+    CommandRule("pip", "uninstall", risk_level="medium", description="Python 卸载包"),
+    CommandRule("pip3", "install", risk_level="medium", description="Python3 安装包"),
+    CommandRule("pip3", "uninstall", risk_level="medium", description="Python3 卸载包"),
+    CommandRule("npm", "install", risk_level="medium", description="Node 安装包"),
+    CommandRule("npm", "uninstall", risk_level="medium", description="Node 卸载包"),
+    CommandRule("npm", "update", risk_level="medium", description="Node 更新包"),
+    CommandRule("npx", risk_level="medium", description="Node 执行包命令"),
+    CommandRule("yarn", "add", risk_level="medium", description="Yarn 安装包"),
+    CommandRule("yarn", "remove", risk_level="medium", description="Yarn 卸载包"),
+    CommandRule("pnpm", "add", risk_level="medium", description="pnpm 安装包"),
+    CommandRule("pnpm", "remove", risk_level="medium", description="pnpm 卸载包"),
     # ========== 文件操作（写入）==========
     CommandRule("touch", risk_level="medium", description="创建空文件"),
     CommandRule("mkdir", risk_level="medium", description="创建目录"),
     CommandRule("cp", risk_level="medium", description="复制文件"),
     CommandRule("mv", risk_level="medium", description="移动文件"),
     CommandRule("ln", risk_level="medium", description="创建链接"),
-    CommandRule("rm", risk_level="high", blocked_flags=["-rf", "-fr", "--recursive"], description="删除文件"),
+    CommandRule(
+        "rm", risk_level="high", blocked_flags=["-rf", "-fr", "--recursive"], description="删除文件"
+    ),
     CommandRule("rmdir", risk_level="medium", description="删除空目录"),
     CommandRule("chmod", risk_level="high", blocked_flags=["-R", "777"], description="修改权限"),
     CommandRule("chown", risk_level="high", blocked_flags=["-R"], description="修改所有者"),
@@ -224,6 +282,22 @@ COMMAND_WHITELIST: list[CommandRule] = [
     CommandRule("kill", risk_level="high", blocked_flags=["-9", "-KILL"], description="终止进程"),
     CommandRule("pkill", risk_level="high", description="按名称终止进程"),
     CommandRule("killall", risk_level="high", description="终止所有匹配进程"),
+    # ========== 常用服务命令 ==========
+    CommandRule("nginx", risk_level="medium", description="Nginx 服务"),
+    CommandRule("redis-server", risk_level="medium", description="Redis 服务"),
+    CommandRule("redis-cli", risk_level="safe", description="Redis 客户端"),
+    CommandRule("mysql", risk_level="safe", description="MySQL 客户端"),
+    CommandRule("psql", risk_level="safe", description="PostgreSQL 客户端"),
+    CommandRule("mongosh", risk_level="safe", description="MongoDB Shell"),
+    CommandRule("mongo", risk_level="safe", description="MongoDB 客户端"),
+    CommandRule("node", risk_level="medium", description="Node.js 运行"),
+    CommandRule("python", risk_level="medium", description="Python 运行"),
+    CommandRule("python3", risk_level="medium", description="Python3 运行"),
+    CommandRule("java", risk_level="medium", description="Java 运行"),
+    CommandRule("go", risk_level="medium", description="Go 运行"),
+    CommandRule("make", risk_level="medium", description="Make 构建"),
+    CommandRule("cargo", risk_level="medium", description="Rust Cargo"),
+    CommandRule("uv", risk_level="medium", description="Python uv 工具"),
     # ========== 其他常用工具 ==========
     CommandRule("jq", risk_level="safe", description="JSON 处理"),
     CommandRule("yq", risk_level="safe", description="YAML 处理"),
@@ -244,34 +318,76 @@ COMMAND_WHITELIST: list[CommandRule] = [
 
 # 绝对禁止的命令（无论如何都不允许）
 BLOCKED_COMMANDS: set[str] = {
-    "dd", "mkfs", "fdisk", "parted", "mount", "umount",
-    "sudo", "su", "passwd", "useradd", "userdel", "groupadd", "groupdel", "visudo",
-    "shutdown", "reboot", "init", "poweroff", "halt",
-    "iptables", "firewall-cmd", "ufw", "nft",
-    "eval", "exec", "source", ".",
+    "dd",
+    "mkfs",
+    "fdisk",
+    "parted",
+    "mount",
+    "umount",
+    "sudo",
+    "su",
+    "passwd",
+    "useradd",
+    "userdel",
+    "groupadd",
+    "groupdel",
+    "visudo",
+    "shutdown",
+    "reboot",
+    "init",
+    "poweroff",
+    "halt",
+    "iptables",
+    "firewall-cmd",
+    "ufw",
+    "nft",
+    "eval",
+    "exec",
+    "source",
+    ".",
 }
 
 # 危险的 shell 元字符和模式
 DANGEROUS_PATTERNS: list[str] = [
-    "$(", "`",  # 命令替换
-    "&&", "||", ";",  # 命令链接
+    "$(",
+    "`",  # 命令替换
+    "&&",
+    "||",
+    ";",  # 命令链接
     "|",  # 管道（单独处理）
-    ">", ">>", "<",  # 重定向
+    ">",
+    ">>",
+    "<",  # 重定向
     "&",  # 后台执行
-    "\\n", "\\r",  # 换行注入
+    "\\n",
+    "\\r",  # 换行注入
     "${",  # 变量展开
     "~",  # 主目录展开
 ]
 
-# 允许的管道命令（只读的文本处理工具）
+# 允许的管道命令（文本处理工具 + 常用管道目标）
 ALLOWED_PIPE_COMMANDS: set[str] = {
-    "grep", "egrep", "fgrep",
-    "awk", "sed",
-    "sort", "uniq", "cut", "tr",
-    "head", "tail", "wc",
-    "jq", "yq",
-    "less", "more",
-    "cat", "tee",
+    "grep",
+    "egrep",
+    "fgrep",
+    "awk",
+    "sed",
+    "sort",
+    "uniq",
+    "cut",
+    "tr",
+    "head",
+    "tail",
+    "wc",
+    "jq",
+    "yq",
+    "less",
+    "more",
+    "cat",
+    "tee",
     "xargs",
     "base64",
+    "kill",  # lsof -ti :8080 | kill
+    "rev",
+    "column",
 }

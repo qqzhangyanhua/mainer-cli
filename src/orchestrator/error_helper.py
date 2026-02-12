@@ -81,8 +81,7 @@ class ErrorHelper:
     def _is_container_not_found(error_msg: str) -> bool:
         """检查是否为容器未找到错误"""
         return (
-            "not found" in error_msg
-            and ("container" in error_msg or "docker" in error_msg)
+            "not found" in error_msg and ("container" in error_msg or "docker" in error_msg)
         ) or "no such container" in error_msg
 
     @staticmethod
@@ -311,9 +310,7 @@ class ErrorHelper:
             "  4. 输入 /help 查看可用命令",
         ]
 
-    def enhance_error_message(
-        self, result: WorkerResult, user_input: str = ""
-    ) -> WorkerResult:
+    def enhance_error_message(self, result: WorkerResult, user_input: str = "") -> WorkerResult:
         """增强错误消息，附加建议
 
         Args:

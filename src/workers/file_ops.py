@@ -44,8 +44,7 @@ async def write_file(
         return WorkerResult(
             success=True,
             message=(
-                f"[DRY-RUN] Would write {len(content)} chars to {path}\n"
-                f"Content preview:\n{preview}"
+                f"[DRY-RUN] Would write {len(content)} chars to {path}\nContent preview:\n{preview}"
             ),
             simulated=True,
         )

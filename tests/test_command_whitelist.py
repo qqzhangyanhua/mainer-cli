@@ -57,7 +57,7 @@ class TestCheckDangerousPatterns:
         # echo 允许使用 $()，但非 echo 命令不允许
         result_echo = check_dangerous_patterns("echo $(whoami)")
         assert result_echo is None, "echo with $() should be allowed"
-        
+
         result_other = check_dangerous_patterns("cat $(whoami)")
         assert result_other is not None, "non-echo commands should not allow $()"
         assert "$(" in result_other
@@ -79,7 +79,7 @@ class TestCheckDangerousPatterns:
         # echo 允许重定向到当前目录，但不允许系统目录
         result_safe = check_dangerous_patterns("echo 'content' > .env")
         assert result_safe is None, "echo to current dir should be allowed"
-        
+
         result_dangerous = check_dangerous_patterns("echo 'pwned' > /etc/passwd")
         assert result_dangerous is not None, "echo to system dir should be blocked"
 

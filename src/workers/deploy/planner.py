@@ -93,9 +93,7 @@ class DeployPlanner:
 
         return env_info
 
-    async def read_local_file(
-        self, project_dir: str, filename: str, max_lines: int = 100
-    ) -> str:
+    async def read_local_file(self, project_dir: str, filename: str, max_lines: int = 100) -> str:
         """安全读取本地文件内容"""
         file_path = os.path.join(project_dir, filename)
         try:
@@ -115,9 +113,7 @@ class DeployPlanner:
         except Exception as e:
             return f"(读取失败: {e})"
 
-    async def collect_key_file_contents(
-        self, project_dir: str, key_files: list[str]
-    ) -> str:
+    async def collect_key_file_contents(self, project_dir: str, key_files: list[str]) -> str:
         """收集关键配置文件的内容"""
         priority_files = [
             "Dockerfile",

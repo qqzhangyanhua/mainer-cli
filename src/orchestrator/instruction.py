@@ -98,8 +98,7 @@ def build_repair_prompt(
 ) -> str:
     """构建修复提示，要求 LLM 纠正无效指令"""
     json_format = (
-        '{"worker": "...", "action": "...", '
-        '"args": {...}, "risk_level": "safe|medium|high"}'
+        '{"worker": "...", "action": "...", "args": {...}, "risk_level": "safe|medium|high"}'
     )
     return (
         "Your previous JSON was invalid: "
@@ -127,9 +126,7 @@ async def generate_instruction_with_retry(
         return instruction, ""
 
     repair_prompt = build_repair_prompt(user_input, error, workers)
-    llm_response = await llm_client.generate(
-        system_prompt, repair_prompt, history=history
-    )
+    llm_response = await llm_client.generate(system_prompt, repair_prompt, history=history)
     instruction, error = parse_and_validate_instruction(llm_response, llm_client, workers)
     if instruction:
         return instruction, ""

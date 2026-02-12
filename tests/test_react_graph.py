@@ -221,13 +221,13 @@ class TestReactNodesSafetyPolicy:
         return EnvironmentContext()
 
     @pytest.mark.asyncio
-    async def test_high_risk_requires_dry_run_in_graph_mode(
+    async def test_high_risk_goes_to_approval_in_graph_mode(
         self,
         mock_llm: MockLLMClient,
         workers: dict[str, BaseWorker],
         context: EnvironmentContext,
     ) -> None:
-        """测试图模式高危操作必须先 dry-run"""
+        """测试高危操作进入审批流程而非直接阻止"""
         nodes = ReactNodes(
             llm_client=mock_llm,
             workers=workers,
@@ -251,8 +251,10 @@ class TestReactNodesSafetyPolicy:
 
         result = await nodes.safety_node(state)
 
-        assert result.get("is_error") is True
-        assert "requires dry-run first" in str(result.get("error_message", ""))
+        # 高危操作应进入审批流程，而非报错
+        assert result.get("is_error") is None
+        assert result.get("risk_level") == "high"
+        assert result.get("needs_approval") is True
 
     @pytest.mark.asyncio
     async def test_high_risk_with_instruction_dry_run_allowed(

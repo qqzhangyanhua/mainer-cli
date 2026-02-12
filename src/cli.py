@@ -321,14 +321,10 @@ def template_run(
                     )
                     raise typer.Exit(1)
 
-                if (
-                    risk == "high"
-                    and config.safety.require_dry_run_for_high_risk
-                ):
+                if risk in ("medium", "high"):
                     console.print(
-                        f"[red]Step {idx} blocked: high-risk action requires --dry-run first[/red]"
+                        f"[yellow]⚠ Step {idx}: risk={risk}, proceeding with caution[/yellow]"
                     )
-                    raise typer.Exit(1)
 
             console.print(f"\n[bold]Step {idx}/{len(instructions)}:[/bold] {instruction.action}")
             console.print(f"[dim]Risk: {risk}[/dim]")

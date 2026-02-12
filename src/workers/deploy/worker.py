@@ -50,11 +50,17 @@ class DeployWorker(BaseWorker):
         # 初始化子模块
         self._planner = DeployPlanner(shell_worker, llm_client, progress_callback)
         self._diagnoser = DeployDiagnoser(
-            shell_worker, llm_client, progress_callback,
-            confirmation_callback, ask_user_callback,
+            shell_worker,
+            llm_client,
+            progress_callback,
+            confirmation_callback,
+            ask_user_callback,
         )
         self._executor = DeployExecutor(
-            shell_worker, self._diagnoser, progress_callback, confirmation_callback,
+            shell_worker,
+            self._diagnoser,
+            progress_callback,
+            confirmation_callback,
         )
 
     def set_progress_callback(self, callback: ProgressCallback) -> None:
@@ -133,7 +139,8 @@ class DeployWorker(BaseWorker):
 
         self._report_progress("deploy", "  获取 README...")
         readme_result = await self._http.execute(
-            "fetch_github_readme", {"repo_url": repo_url},
+            "fetch_github_readme",
+            {"repo_url": repo_url},
         )
         readme_content = ""
         if readme_result.success and readme_result.data:
@@ -141,7 +148,8 @@ class DeployWorker(BaseWorker):
 
         self._report_progress("deploy", "  获取文件列表...")
         files_result = await self._http.execute(
-            "list_github_files", {"repo_url": repo_url},
+            "list_github_files",
+            {"repo_url": repo_url},
         )
         key_files: list[str] = []
         if files_result.success and files_result.data:
@@ -150,9 +158,7 @@ class DeployWorker(BaseWorker):
                 key_files = [f.strip() for f in key_files_str.split(",")]
 
         steps_log.append(f"  ✓ 仓库: {owner}/{repo}")
-        steps_log.append(
-            f"  ✓ 关键文件: {', '.join(key_files[:10]) if key_files else '无'}"
-        )
+        steps_log.append(f"  ✓ 关键文件: {', '.join(key_files[:10]) if key_files else '无'}")
 
         # ========== Step 2: 克隆仓库 ==========
         self._report_progress("deploy", "📦 Step 2/4: 克隆仓库...")
@@ -169,11 +175,13 @@ class DeployWorker(BaseWorker):
             steps_log.append(f"  [DRY-RUN] 将执行: git clone {repo_url}")
         else:
             mkdir_result = await self._shell.execute(
-                "execute_command", {"command": f"mkdir -p {safe_target_dir}"},
+                "execute_command",
+                {"command": f"mkdir -p {safe_target_dir}"},
             )
             if not mkdir_result.success:
                 return WorkerResult(
-                    success=False, message=f"创建目录失败: {mkdir_result.message}",
+                    success=False,
+                    message=f"创建目录失败: {mkdir_result.message}",
                 )
 
             check_result = await self._shell.execute(
@@ -220,7 +228,8 @@ class DeployWorker(BaseWorker):
                 )
                 if not clone_result.success:
                     return WorkerResult(
-                        success=False, message=f"克隆失败: {clone_result.message}",
+                        success=False,
+                        message=f"克隆失败: {clone_result.message}",
                     )
                 steps_log.append(f"  ✓ 克隆完成: {clone_path}")
 
@@ -271,7 +280,8 @@ class DeployWorker(BaseWorker):
 
         if skipped_empty_commands > 0:
             self._report_progress(
-                "deploy", f"  ⚠️ 已跳过 {skipped_empty_commands} 个空命令步骤",
+                "deploy",
+                f"  ⚠️ 已跳过 {skipped_empty_commands} 个空命令步骤",
             )
             steps_log.append(f"  ⚠️ 已跳过 {skipped_empty_commands} 个空命令步骤")
 
@@ -335,21 +345,23 @@ class DeployWorker(BaseWorker):
         # ========== Step 5: 验证部署 ==========
         # 检测是否使用了 Docker 部署（不仅限于 project_type == "docker"）
         uses_docker = any(
-            "docker run" in step.get("command", "") or
-            "docker compose" in step.get("command", "") or
-            "docker-compose" in step.get("command", "")
+            "docker run" in step.get("command", "")
+            or "docker compose" in step.get("command", "")
+            or "docker-compose" in step.get("command", "")
             for step in deploy_steps
         )
 
         if uses_docker and not dry_run:
             self._report_progress("deploy", "\n🔍 Step 5/5: 验证部署...")
-            verify_success, verify_message, container_info = (
-                await self._executor.verify_docker_deployment(
-                    deploy_steps=deploy_steps,
-                    project_dir=clone_path,
-                    project_type=project_type,
-                    known_files=key_files,
-                )
+            (
+                verify_success,
+                verify_message,
+                container_info,
+            ) = await self._executor.verify_docker_deployment(
+                deploy_steps=deploy_steps,
+                project_dir=clone_path,
+                project_type=project_type,
+                known_files=key_files,
             )
 
             if not verify_success:
@@ -363,7 +375,11 @@ class DeployWorker(BaseWorker):
                     success=False,
                     data=cast(
                         dict[str, Union[str, int, bool]],
-                        {"project_dir": clone_path, "project_type": project_type, "repo_url": repo_url},
+                        {
+                            "project_dir": clone_path,
+                            "project_type": project_type,
+                            "repo_url": repo_url,
+                        },
                     ),
                     message=summary,
                     task_completed=True,

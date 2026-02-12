@@ -89,9 +89,7 @@ class TestDockerRunVerification:
         # 第五次：修复后再次检查，容器运行成功
         mock_shell.execute.side_effect = [
             WorkerResult(success=True, message=""),  # docker ps: 无运行容器
-            WorkerResult(
-                success=True, message="myapp Exited (1) 1 minute ago"
-            ),  # docker ps -a
+            WorkerResult(success=True, message="myapp Exited (1) 1 minute ago"),  # docker ps -a
             WorkerResult(
                 success=True, message="Error: environment variable SECRET_KEY required"
             ),  # logs
@@ -164,9 +162,7 @@ class TestDockerRunVerification:
         self, executor: DeployExecutor, mock_shell: MagicMock
     ) -> None:
         """测试无容器名称时跳过验证"""
-        deploy_steps = [
-            {"description": "构建镜像", "command": "docker build -t myapp ."}
-        ]
+        deploy_steps = [{"description": "构建镜像", "command": "docker build -t myapp ."}]
 
         success, message, info = await executor.verify_docker_deployment(
             deploy_steps=deploy_steps,
@@ -188,9 +184,7 @@ class TestDockerComposeVerification:
         self, executor: DeployExecutor, mock_shell: MagicMock
     ) -> None:
         """测试 docker compose 验证成功"""
-        deploy_steps = [
-            {"description": "启动服务", "command": "docker compose up -d"}
-        ]
+        deploy_steps = [{"description": "启动服务", "command": "docker compose up -d"}]
 
         mock_shell.execute.return_value = WorkerResult(
             success=True,
@@ -217,19 +211,13 @@ class TestDockerComposeVerification:
         mock_diagnoser: MagicMock,
     ) -> None:
         """测试 docker compose 服务未运行时的修复"""
-        deploy_steps = [
-            {"description": "启动服务", "command": "docker compose up -d"}
-        ]
+        deploy_steps = [{"description": "启动服务", "command": "docker compose up -d"}]
 
         mock_shell.execute.side_effect = [
             WorkerResult(success=True, message=""),  # docker compose ps: 无服务
-            WorkerResult(
-                success=True, message="Error: SECRET_KEY required"
-            ),  # docker compose logs
+            WorkerResult(success=True, message="Error: SECRET_KEY required"),  # docker compose logs
             WorkerResult(success=True, message="ok"),  # 执行修复命令
-            WorkerResult(
-                success=True, message='{"State":"running"}'
-            ),  # 修复后检查
+            WorkerResult(success=True, message='{"State":"running"}'),  # 修复后检查
         ]
 
         mock_diagnoser.react_diagnose_loop.return_value = (
@@ -255,13 +243,9 @@ class TestDockerComposeVerification:
         self, executor: DeployExecutor, mock_shell: MagicMock
     ) -> None:
         """测试支持 docker-compose（带连字符）命令"""
-        deploy_steps = [
-            {"description": "启动服务", "command": "docker-compose up -d"}
-        ]
+        deploy_steps = [{"description": "启动服务", "command": "docker-compose up -d"}]
 
-        mock_shell.execute.return_value = WorkerResult(
-            success=True, message='{"State":"running"}'
-        )
+        mock_shell.execute.return_value = WorkerResult(success=True, message='{"State":"running"}')
 
         success, message, info = await executor.verify_docker_deployment(
             deploy_steps=deploy_steps,
@@ -358,9 +342,7 @@ class TestVerificationTrigger:
             {"description": "运行", "command": "docker run -d --name app -p 8000:8000 app"},
         ]
 
-        mock_shell.execute.return_value = WorkerResult(
-            success=True, message="app Up 1 minute"
-        )
+        mock_shell.execute.return_value = WorkerResult(success=True, message="app Up 1 minute")
 
         success, message, info = await executor.verify_docker_deployment(
             deploy_steps=deploy_steps,
@@ -376,13 +358,9 @@ class TestVerificationTrigger:
         self, executor: DeployExecutor, mock_shell: MagicMock
     ) -> None:
         """测试包含 docker compose 的部署会触发验证"""
-        deploy_steps = [
-            {"description": "启动", "command": "docker compose up -d"}
-        ]
+        deploy_steps = [{"description": "启动", "command": "docker compose up -d"}]
 
-        mock_shell.execute.return_value = WorkerResult(
-            success=True, message='{"State":"running"}'
-        )
+        mock_shell.execute.return_value = WorkerResult(success=True, message='{"State":"running"}')
 
         success, message, info = await executor.verify_docker_deployment(
             deploy_steps=deploy_steps,

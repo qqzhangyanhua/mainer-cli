@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from typing import Tuple, Union, cast
 
 from src.orchestrator.command_whitelist import check_command_safety
@@ -14,6 +15,12 @@ from src.workers.base import BaseWorker
 MAX_OUTPUT_LENGTH = 4000
 TRUNCATE_HEAD = 2000
 TRUNCATE_TAIL = 2000
+
+# 以 exit code 1 表示"无匹配/条件不满足"的命令（非错误）
+# grep/egrep/fgrep: 无匹配行时返回 1
+# diff: 文件有差异时返回 1
+# test/[: 条件不成立时返回 1
+_EXIT1_OK_COMMANDS = re.compile(r"^(grep|egrep|fgrep|diff|test|\[)$")
 
 
 class ShellWorker(BaseWorker):
@@ -35,6 +42,25 @@ class ShellWorker(BaseWorker):
 
     def get_capabilities(self) -> list[str]:
         return ["execute_command"]
+
+    @staticmethod
+    def _is_exit1_ok(command: str) -> bool:
+        """判断命令是否属于 exit code 1 表示正常结果（无匹配）的类型
+
+        对管道命令，检查最后一个管道段的主命令。
+        例如 ``ps aux | grep nginx | grep -v grep`` 最后一段主命令为 ``grep``。
+        """
+        # 取管道最后一段
+        last_segment = command.split("|")[-1].strip()
+        # 提取主命令（跳过 env 变量赋值）
+        parts = last_segment.split()
+        cmd = ""
+        for part in parts:
+            if "=" in part and not part.startswith("-"):
+                continue  # 跳过 VAR=value 形式
+            cmd = part.split("/")[-1]  # 取 basename
+            break
+        return bool(_EXIT1_OK_COMMANDS.match(cmd))
 
     def _truncate_output(self, output: str) -> Tuple[str, bool]:
         """截断过长输出，保留头尾部分
@@ -118,17 +144,29 @@ class ShellWorker(BaseWorker):
             stderr = stderr_bytes.decode("utf-8", errors="replace")
 
             exit_code = process.returncode or 0
-            success = exit_code == 0
+
+            # 判断是否成功：
+            # - exit code 0 总是成功
+            # - exit code 1 且命令属于 "exit1 正常" 类型（如 grep 无匹配）也视为成功
+            if exit_code == 0:
+                success = True
+            elif exit_code == 1 and self._is_exit1_ok(command) and not stderr:
+                success = True
+            else:
+                success = False
 
             # 截断过长输出用于 LLM 上下文传递
             raw_output, truncated = self._truncate_output(stdout)
 
             # 构建结果消息
             message_parts = [f"Command: {command}"]
-            if stdout:
+            if exit_code == 1 and self._is_exit1_ok(command) and not stdout.strip():
+                # 对 grep 等命令，无匹配时给出友好提示而非显示为错误
+                message_parts.append("Output:\n(no matches found)")
+            elif stdout:
                 message_parts.append(f"Output:\n{stdout.strip()}")
             if stderr:
-                message_parts.append(f"Error:\n{stderr.strip()}")
+                message_parts.append(f"Stderr:\n{stderr.strip()}")
             message_parts.append(f"Exit code: {exit_code}")
 
             return WorkerResult(
@@ -145,7 +183,9 @@ class ShellWorker(BaseWorker):
                     },
                 ),
                 message="\n".join(message_parts),
-                task_completed=success,
+                # 不标记 task_completed，让 ReAct 循环继续回到 LLM，
+                # 由 LLM 用 chat.respond 生成用户友好的自然语言回答
+                task_completed=False,
             )
 
         except Exception as e:

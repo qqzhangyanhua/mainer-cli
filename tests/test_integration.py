@@ -31,9 +31,7 @@ class TestIntegration:
             "messages": [],
         }
 
-        with patch.object(
-            engine._react_graph, "run", new_callable=AsyncMock
-        ) as mock_run:
+        with patch.object(engine._react_graph, "run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = mock_state
 
             result = await engine.react_loop_graph("检查磁盘")
@@ -54,9 +52,7 @@ class TestIntegration:
             "messages": [],
         }
 
-        with patch.object(
-            engine._react_graph, "run", new_callable=AsyncMock
-        ) as mock_run:
+        with patch.object(engine._react_graph, "run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = mock_state
 
             result = await engine.react_loop_graph("删除所有文件")
@@ -64,9 +60,7 @@ class TestIntegration:
             assert "exceeds configured max risk" in result
 
     @pytest.mark.asyncio
-    async def test_execute_instruction_directly(
-        self, config: OpsAIConfig
-    ) -> None:
+    async def test_execute_instruction_directly(self, config: OpsAIConfig) -> None:
         """测试直接执行指令（template run 路径）"""
         from src.types import Instruction
 
@@ -96,9 +90,7 @@ class TestIntegration:
             "messages": [],
         }
 
-        with patch.object(
-            engine._react_graph, "run", new_callable=AsyncMock
-        ) as mock_run:
+        with patch.object(engine._react_graph, "run", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = mock_state
 
             result = await engine.react_loop_graph("检查磁盘")

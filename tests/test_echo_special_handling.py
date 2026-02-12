@@ -10,7 +10,7 @@ class TestEchoSpecialHandling:
         """测试 echo 中使用 $() 被允许"""
         command = "echo SECRET_KEY=$(openssl rand -hex 32) > .env"
         result = check_command_safety(command)
-        
+
         assert result.allowed is True, f"echo with $() should be allowed, but got: {result.reason}"
 
     def test_echo_with_redirect_allowed(self) -> None:
@@ -20,7 +20,7 @@ class TestEchoSpecialHandling:
             "echo VAR=value >> .env",
             "echo 'VAR=value' > .env",
         ]
-        
+
         for command in commands:
             result = check_command_safety(command)
             assert result.allowed is True, f"{command} should be allowed, but got: {result.reason}"
@@ -30,11 +30,11 @@ class TestEchoSpecialHandling:
         dangerous_commands = [
             "echo test && rm -rf /",  # &&
             "echo test || rm -rf /",  # ||
-            "echo test; rm -rf /",    # ;
-            "echo test `rm -rf /`",   # `
-            "echo test & rm -rf /",   # &
+            "echo test; rm -rf /",  # ;
+            "echo test `rm -rf /`",  # `
+            "echo test & rm -rf /",  # &
         ]
-        
+
         for command in dangerous_commands:
             result = check_command_safety(command)
             assert result.allowed is False, f"{command} should be blocked"
@@ -45,7 +45,7 @@ class TestEchoSpecialHandling:
             "cat file.txt > output.txt",  # > 在非 echo 中被拦截
             "docker run $(cat file.txt)",  # $() 在非 echo 中被拦截
         ]
-        
+
         for command in dangerous_commands:
             result = check_command_safety(command)
             assert result.allowed is False, f"{command} should be blocked"
@@ -57,7 +57,7 @@ class TestEchoSpecialHandling:
             "echo DATABASE_URL=postgresql://localhost/db >> .env",
             'echo "API_KEY=$(cat /tmp/key.txt)" >> .env',
         ]
-        
+
         for command in commands:
             result = check_command_safety(command)
             assert result.allowed is True, f"{command} should be allowed"

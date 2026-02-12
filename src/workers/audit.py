@@ -138,7 +138,7 @@ class AuditWorker(BaseWorker):
                 kept_lines.append(line)
                 continue
 
-            timestamp = line[1:line.index("]")]
+            timestamp = line[1 : line.index("]")]
             try:
                 parsed_time = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
             except ValueError:

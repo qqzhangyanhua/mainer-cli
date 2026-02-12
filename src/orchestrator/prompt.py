@@ -160,6 +160,18 @@ Worker Details:
 - system/container: Avoid these for listing/monitoring - use shell commands instead
 
 CRITICAL Rules:
+0. ⭐⭐⭐ SUMMARIZE COMMAND OUTPUT (最关键!!!):
+   - After executing a shell command, you MUST use chat.respond to summarize the result in natural language (Chinese)!
+   - NEVER leave raw command output as the final answer. Users need plain-language explanations.
+   - Examples:
+     * User: "我本机装了nginx么" → Step 1: shell.execute_command "ps aux | grep nginx | grep -v grep"
+       → Step 2 (after seeing output): chat.respond "你本机目前没有运行 nginx 进程。如果你安装了但没启动，可以用 `nginx` 或 `brew services start nginx` 启动。"
+     * User: "磁盘还剩多少" → Step 1: shell.execute_command "df -h"
+       → Step 2: chat.respond "你的主磁盘总共 500GB，已用 320GB，剩余 180GB（使用率 64%）。"
+     * User: "当前目录有什么文件" → Step 1: shell.execute_command "ls -la"
+       → Step 2: chat.respond "当前目录下共有 12 个文件/文件夹，包括 src/、tests/、README.md 等。"
+   - For action commands (kill, restart, stop, start, rm, etc.), also summarize:
+     * "已成功重启 nginx 服务" or "端口 8080 的进程已被终止"
 1. ⭐⭐⭐ INTENT PRIORITY (意图优先级 - 最重要!!!):
    - If user mentions BOTH listing AND explaining, EXPLAINING takes priority!
    - "我只有一个docker服务，这个是干嘛的" → User already knows the list, wants EXPLANATION → use analyze.explain
@@ -187,6 +199,15 @@ CRITICAL Rules:
 Example workflows:
 User: "我有哪些docker服务"
 Step 1: {{"worker": "shell", "action": "execute_command", "args": {{"command": "docker ps"}}, "risk_level": "safe"}}
+Step 2 (after seeing output): {{"worker": "chat", "action": "respond", "args": {{"message": "你当前有 3 个 Docker 容器在运行：\n1. compoder-mongo (MongoDB)\n2. compoder-redis (Redis)\n3. compoder-app (应用服务)"}}, "risk_level": "safe"}}
+
+User: "我本机有nginx么"
+Step 1: {{"worker": "shell", "action": "execute_command", "args": {{"command": "ps aux | grep nginx | grep -v grep"}}, "risk_level": "safe"}}
+Step 2 (after seeing no matches): {{"worker": "chat", "action": "respond", "args": {{"message": "你本机目前没有运行 nginx 进程。"}}, "risk_level": "safe"}}
+
+User: "怎么安装nginx" or "帮我安装nginx"
+Step 1: {{"worker": "shell", "action": "execute_command", "args": {{"command": "brew install nginx"}}, "risk_level": "medium"}}
+Step 2 (after install): {{"worker": "chat", "action": "respond", "args": {{"message": "nginx 已安装成功！你可以用 `nginx` 启动，或 `brew services start nginx` 设为开机自启。"}}, "risk_level": "safe"}}
 
 User: "这个 docker 是干嘛的" (referring to compoder-mongo from previous output)
 Step 1: {{"worker": "analyze", "action": "explain", "args": {{"target": "compoder-mongo", "type": "docker"}}, "risk_level": "safe"}}

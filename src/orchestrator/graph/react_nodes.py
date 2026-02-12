@@ -450,17 +450,8 @@ class ReactNodes:
                 ),
             }
 
-        if (
-            risk == "high"
-            and self._require_dry_run_for_high_risk
-            and not (self._dry_run or instruction.dry_run)
-        ):
-            return {
-                "is_error": True,
-                "error_message": "HIGH-risk operation requires dry-run first",
-            }
-
         # 判断是否需要审批
+        # 高风险操作通过审批流程确认，而非直接阻止
         needs_approval = risk in ["medium", "high"] or (
             risk == "safe" and not self._auto_approve_safe
         )

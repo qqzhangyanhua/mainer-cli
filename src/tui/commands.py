@@ -74,9 +74,7 @@ def show_config(
 
     config_dict = config.model_dump()
     config_dict["llm"]["api_key"] = mask_secret(config_dict["llm"].get("api_key", ""))
-    config_dict["http"]["github_token"] = mask_secret(
-        config_dict["http"].get("github_token", "")
-    )
+    config_dict["http"]["github_token"] = mask_secret(config_dict["http"].get("github_token", ""))
 
     config_json = json.dumps(config_dict, ensure_ascii=False, indent=2)
     config_path = config_manager.get_config_path()
