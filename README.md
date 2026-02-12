@@ -4,6 +4,63 @@
 
 **核心能力**：查日志 · 查状态 · 重启服务 · 检查资源 · 文件操作 · Git 管理 · 一键部署
 
+## 系统架构图
+
+```mermaid
+flowchart LR
+    U["用户自然语言请求"]
+
+    subgraph Entry["交互层"]
+        CLI["CLI 入口<br/>src/cli.py"]
+        TUI["TUI 入口<br/>src/tui/app.py"]
+    end
+
+    subgraph Core["编排层"]
+        ENG["OrchestratorEngine<br/>src/orchestrator/engine.py"]
+        GRAPH["ReactGraph（可选，TUI 默认启用）<br/>src/orchestrator/graph/"]
+        PRE["RequestPreprocessor"]
+        PROMPT["PromptBuilder / Instruction 校验"]
+        SAFE["Safety Check"]
+    end
+
+    subgraph Runtime["执行层（Workers）"]
+        W_SYS["SystemWorker"]
+        W_CONTAINER["ContainerWorker"]
+        W_GIT["GitWorker"]
+        W_HTTP["HttpWorker"]
+        W_SHELL["ShellWorker"]
+        W_DEPLOY["DeployWorker"]
+        W_ANALYZE["AnalyzeWorker"]
+        W_AUDIT["AuditWorker"]
+    end
+
+    subgraph Support["支撑层"]
+        CFG["ConfigManager<br/>src/config/manager.py"]
+        CTX["EnvironmentContext / Detector<br/>src/context/"]
+        LLM["LLMClient<br/>src/llm/client.py"]
+        LOG["~/.opsai/audit.log"]
+    end
+
+    U --> CLI
+    U --> TUI
+    CLI --> ENG
+    TUI --> ENG
+    ENG --> GRAPH
+    ENG --> PRE
+    ENG --> PROMPT
+    ENG --> SAFE
+    PRE --> CTX
+    PROMPT --> LLM
+    SAFE --> Runtime
+    GRAPH --> Runtime
+    ENG --> Runtime
+    ENG --> CFG
+    CFG --> LLM
+    W_AUDIT --> LOG
+```
+
+执行链路：用户请求从 CLI/TUI 进入编排引擎，经过意图预处理、指令生成与安全检查后，路由到对应 Worker 执行，并将关键操作写入审计日志。
+
 ## 快速开始
 
 ### 1. 安装

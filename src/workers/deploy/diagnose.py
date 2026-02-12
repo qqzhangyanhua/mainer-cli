@@ -253,11 +253,11 @@ class DeployDiagnoser:
         known_files: list[str],
         confirmation_callback: Optional[Callable[[str, str], Awaitable[bool]]] = None,
         max_iterations: int = 3,
-    ) -> tuple[bool, str, list[str], Optional[str]]:
+    ) -> tuple[bool, str, list[str], Optional[str], str]:
         """ReAct 循环自主诊断和修复
 
         Returns:
-            (fixed, message, fix_commands, new_command)
+            (fixed, message, fix_commands, new_command, cause)
         """
         collected_info: list[str] = []
         fix_commands: list[str] = []
@@ -290,13 +290,13 @@ class DeployDiagnoser:
 
             if action == "give_up":
                 suggestion = diagnosis.get("suggestion", "请手动检查项目")
-                return False, f"原因: {cause}\n建议: {suggestion}", [], None
+                return False, f"原因: {cause}\n建议: {suggestion}", [], None, str(cause)
 
             elif action == "fix":
                 if isinstance(new_command, str) and new_command:
                     self._report_progress("deploy", "    🔄 使用修改后的命令:")
                     self._report_progress("deploy", f"    📝 {new_command[:100]}...")
-                    return True, "已生成修复命令", [], new_command
+                    return True, "已生成修复命令", [], new_command, str(cause)
 
                 commands = diagnosis.get("commands", [])
                 if isinstance(commands, list):
@@ -332,7 +332,7 @@ class DeployDiagnoser:
                                 )
 
                 if fix_commands:
-                    return True, "已执行修复命令", fix_commands, None
+                    return True, "已执行修复命令", fix_commands, None, str(cause)
 
             elif action == "ask_user":
                 ask_info = diagnosis.get("ask_user", {})
@@ -351,7 +351,7 @@ class DeployDiagnoser:
                         self._report_progress("deploy", f"    ✓ 用户选择: {user_choice}")
                         collected_info.append(f"用户选择: {user_choice}")
                         if not user_choice:
-                            return False, "用户取消操作", [], None
+                            return False, "用户取消操作", [], None, ""
                     else:
                         collected_info.append(f"需要用户选择但无回调: {question}")
                         self._report_progress("deploy", "    ⚠️ 无法询问用户，跳过此步骤")
@@ -382,6 +382,7 @@ class DeployDiagnoser:
                                         f"已编辑文件 {file_path}",
                                         fix_commands,
                                         None,
+                                        str(cause),
                                     )
                                 except Exception as e:
                                     collected_info.append(f"编辑文件失败: {e}")
@@ -393,7 +394,7 @@ class DeployDiagnoser:
                 collected_info.append(f"跳过操作: {action}")
                 self._report_progress("deploy", "    ⚠️ 跳过探索操作，继续分析...")
 
-        return False, "诊断超过最大尝试次数", [], None
+        return False, "诊断超过最大尝试次数", [], None, ""
 
     @staticmethod
     def is_safe_read_command(cmd: str) -> bool:

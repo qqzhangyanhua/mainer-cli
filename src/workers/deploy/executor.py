@@ -100,6 +100,7 @@ class DeployExecutor:
 
         first_error: str = ""
         current_command = command
+        fix_notes: list[str] = []
 
         for attempt in range(max_retries + 1):
             self._report_progress("deploy", f"    执行: {current_command[:80]}...")
@@ -117,7 +118,10 @@ class DeployExecutor:
                             False,
                             "✗ Docker Desktop 启动后仍未就绪，请手动确认 Docker 已启动后重试",
                         )
-                return True, f"✓ {description}"
+                msg = f"✓ {description}"
+                if fix_notes:
+                    msg += "\n" + "\n".join(f"    ⚠ {note}" for note in fix_notes)
+                return True, msg
 
             if attempt == 0:
                 first_error = result.message
@@ -129,7 +133,7 @@ class DeployExecutor:
                 )
 
             self._report_progress("deploy", "    ⚠️ 命令失败，启动 AI 自主诊断...")
-            fixed, diagnose_msg, fix_commands, new_command = (
+            fixed, diagnose_msg, fix_commands, new_command, cause = (
                 await self._diagnoser.react_diagnose_loop(
                     command=current_command,
                     error=result.message,
@@ -148,6 +152,9 @@ class DeployExecutor:
                 if diagnose_msg:
                     error_detail += f"\n{diagnose_msg}"
                 return False, error_detail
+
+            if fixed and cause:
+                fix_notes.append(cause)
 
             if new_command:
                 current_command = new_command
@@ -274,7 +281,7 @@ class DeployExecutor:
                     f"    🔧 尝试修复 (尝试 {attempt + 1}/{max_fix_attempts})...",
                 )
 
-                fixed, diagnose_msg, fix_commands, new_command = (
+                fixed, diagnose_msg, fix_commands, new_command, _cause = (
                     await self._diagnoser.react_diagnose_loop(
                         command=docker_run_command,
                         error=error_message,
@@ -366,7 +373,7 @@ class DeployExecutor:
                     f"    🔧 尝试修复 (尝试 {attempt + 1}/{max_fix_attempts})...",
                 )
 
-                fixed, diagnose_msg, fix_commands, new_command = (
+                fixed, diagnose_msg, fix_commands, new_command, _cause = (
                     await self._diagnoser.react_diagnose_loop(
                         command=docker_run_command,
                         error=error_message,
