@@ -11,9 +11,14 @@ from typing import TYPE_CHECKING
 from src.config.manager import OpsAIConfig
 from src.context.environment import EnvironmentContext
 from src.llm.client import LLMClient
-from pydantic import ValidationError
 
 from src.orchestrator.error_helper import ErrorHelper
+from src.orchestrator.graph_adapter import build_graph_messages, parse_graph_messages
+from src.orchestrator.instruction import (
+    available_workers_text,
+    build_fallback_instruction,
+    generate_instruction_with_retry,
+)
 from src.orchestrator.preprocessor import RequestPreprocessor
 from src.orchestrator.prompt import PromptBuilder
 from src.orchestrator.safety import check_safety
@@ -232,88 +237,28 @@ class OrchestratorEngine:
 
     def _available_workers_text(self) -> str:
         """构建可用 Worker/Action 列表文本"""
-        lines = []
-        for worker_name in sorted(self._workers.keys()):
-            actions = self._workers[worker_name].get_capabilities()
-            lines.append(f"- {worker_name}: {', '.join(actions)}")
-        return "\n".join(lines)
+        return available_workers_text(self._workers)
 
     def _build_instruction(self, parsed: dict[str, object]) -> Instruction:
-        """从解析后的 JSON 构建指令，带基础容错"""
-        args = parsed.get("args", {})
-        if not isinstance(args, dict):
-            args = {}
-
-        risk_level = parsed.get("risk_level", "safe")
-        if risk_level not in {"safe", "medium", "high"}:
-            risk_level = "safe"
-
-        dry_run = parsed.get("dry_run", False)
-        if isinstance(dry_run, str):
-            dry_run = dry_run.lower() == "true"
-
-        return Instruction(
-            worker=str(parsed.get("worker", "")),
-            action=str(parsed.get("action", "")),
-            args=args,  # type: ignore[arg-type]
-            risk_level=risk_level,  # type: ignore[arg-type]
-            dry_run=bool(dry_run),
-        )
+        """从解析后的 JSON 构建指令，带基础容错（委托到 instruction 模块）"""
+        from src.orchestrator.instruction import build_instruction
+        return build_instruction(parsed)
 
     def _build_fallback_instruction(
         self, user_input: str, error_message: str
     ) -> Optional[Instruction]:
-        """构建兜底指令：校验失败时回退到 chat.respond"""
-        chat_worker = self._workers.get("chat")
-        if not chat_worker or "respond" not in chat_worker.get_capabilities():
-            return None
-
-        message = (
-            "指令校验失败，无法执行当前请求。\n"
-            f"原因: {error_message}\n\n"
-            "请更具体描述你的需求，或明确使用以下能力:\n"
-            f"{self._available_workers_text()}\n\n"
-            f"原始请求: {user_input}"
-        )
-        return Instruction(
-            worker="chat",
-            action="respond",
-            args={"message": message},
-            risk_level="safe",
-        )
+        """构建兜底指令（委托到 instruction 模块）"""
+        return build_fallback_instruction(user_input, error_message, self._workers)
 
     def _parse_and_validate_instruction(self, response: str) -> tuple[Optional[Instruction], str]:
-        """解析并校验 LLM 指令"""
-        parsed = self._llm_client.parse_json_response(response)
-        if parsed is None:
-            return None, "Failed to parse LLM response JSON"
-
-        try:
-            instruction = self._build_instruction(parsed)
-        except ValidationError as e:
-            return None, f"Invalid instruction schema: {e}"
-
-        valid, error = validate_instruction(instruction, self._workers)
-        if not valid:
-            return None, error
-
-        return instruction, ""
+        """解析并校验 LLM 指令（委托到 instruction 模块）"""
+        from src.orchestrator.instruction import parse_and_validate_instruction
+        return parse_and_validate_instruction(response, self._llm_client, self._workers)
 
     def _build_repair_prompt(self, user_input: str, error_message: str) -> str:
-        """构建修复提示，要求 LLM 纠正无效指令"""
-        json_format = (
-            '{"worker": "...", "action": "...", '
-            '"args": {...}, "risk_level": "safe|medium|high"}'
-        )
-        return (
-            "Your previous JSON was invalid: "
-            f"{error_message}\n\n"
-            "Return ONLY a valid JSON object with fields:\n"
-            f"{json_format}\n\n"
-            "Allowed workers/actions:\n"
-            f"{self._available_workers_text()}\n\n"
-            f"User request: {user_input}"
-        )
+        """构建修复提示（委托到 instruction 模块）"""
+        from src.orchestrator.instruction import build_repair_prompt
+        return build_repair_prompt(user_input, error_message, self._workers)
 
     async def _generate_instruction_with_retry(
         self,
@@ -322,110 +267,21 @@ class OrchestratorEngine:
         user_input: str,
         history: Optional[list[ConversationEntry]],
     ) -> tuple[Optional[Instruction], str]:
-        """生成指令并进行一次纠错重试"""
-        llm_response = await self._llm_client.generate(system_prompt, user_prompt, history=history)
-        instruction, error = self._parse_and_validate_instruction(llm_response)
-        if instruction:
-            return instruction, ""
-
-        repair_prompt = self._build_repair_prompt(user_input, error)
-        llm_response = await self._llm_client.generate(
-            system_prompt, repair_prompt, history=history
+        """生成指令并进行一次纠错重试（委托到 instruction 模块）"""
+        return await generate_instruction_with_retry(
+            self._llm_client, self._workers,
+            system_prompt, user_prompt, user_input, history,
         )
-        instruction, error = self._parse_and_validate_instruction(llm_response)
-        if instruction:
-            return instruction, ""
-
-        fallback = self._build_fallback_instruction(user_input, error)
-        if fallback:
-            return fallback, ""
-
-        return None, error
 
     def _build_graph_messages(
         self, history: Optional[list[ConversationEntry]]
     ) -> list[dict[str, object]]:
-        """将 ConversationEntry 转换为 LangGraph 消息格式"""
-        messages: list[dict[str, object]] = []
-        if not history:
-            return messages
-
-        for entry in history:
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": f"Execute: {entry.instruction.worker}.{entry.instruction.action}",
-                    "instruction": entry.instruction.dict(),
-                    "user_input": entry.user_input,
-                }
-            )
-            messages.append(
-                {
-                    "role": "system",
-                    "content": entry.result.message,
-                    "result": entry.result.dict(),
-                }
-            )
-
-        return messages
+        """将 ConversationEntry 转换为 LangGraph 消息格式（委托到 graph_adapter）"""
+        return build_graph_messages(history)
 
     def _parse_graph_messages(self, messages: list[object]) -> list[ConversationEntry]:
-        """从 LangGraph 消息历史解析 ConversationEntry"""
-        history: list[ConversationEntry] = []
-
-        def _message_role(message: object) -> Optional[str]:
-            if isinstance(message, dict):
-                role = message.get("role")
-            else:
-                role = getattr(message, "type", None)
-            if role == "ai":
-                return "assistant"
-            if role == "human":
-                return "user"
-            return role
-
-        def _message_get(message: object, key: str) -> object:
-            if isinstance(message, dict):
-                return message.get(key)
-            additional = getattr(message, "additional_kwargs", None)
-            if isinstance(additional, dict):
-                return additional.get(key)
-            return None
-
-        i = 0
-        while i < len(messages) - 1:
-            msg1 = messages[i]
-            msg2 = messages[i + 1]
-
-            if _message_role(msg1) == "assistant" and _message_role(msg2) == "system":
-                inst_dict = _message_get(msg1, "instruction")
-                res_dict = _message_get(msg2, "result")
-                if isinstance(inst_dict, dict) and isinstance(res_dict, dict):
-                    instruction = Instruction(
-                        worker=str(inst_dict.get("worker", "")),
-                        action=str(inst_dict.get("action", "")),
-                        args=inst_dict.get("args", {}),  # type: ignore[arg-type]
-                        risk_level=inst_dict.get("risk_level", "safe"),  # type: ignore[arg-type]
-                        dry_run=bool(inst_dict.get("dry_run", False)),
-                    )
-                    result = WorkerResult(
-                        success=bool(res_dict.get("success", False)),
-                        data=res_dict.get("data"),  # type: ignore[arg-type]
-                        message=str(res_dict.get("message", "")),
-                        task_completed=bool(res_dict.get("task_completed", False)),
-                        simulated=bool(res_dict.get("simulated", False)),
-                    )
-                    history.append(
-                        ConversationEntry(
-                            instruction=instruction,
-                            result=result,
-                            user_input=_message_get(msg1, "user_input"),  # type: ignore[arg-type]
-                        )
-                    )
-
-            i += 2
-
-        return history
+        """从 LangGraph 消息历史解析 ConversationEntry（委托到 graph_adapter）"""
+        return parse_graph_messages(messages)
 
     async def execute_instruction(self, instruction: Instruction) -> WorkerResult:
         """执行指令
