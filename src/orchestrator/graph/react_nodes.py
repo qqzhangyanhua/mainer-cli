@@ -155,14 +155,18 @@ class ReactNodes:
         user_input: str,
         history: list[ConversationEntry],
     ) -> tuple[Optional[Instruction], str]:
-        """生成指令并进行一次纠错重试"""
-        llm_response = await self._llm.generate(system_prompt, user_prompt, history=history)
+        """生成指令并进行一次纠错重试
+
+        注意: history 已通过 build_user_prompt 嵌入到 user_prompt 文本中，
+        不再通过 generate() 的 history 参数传递，避免重复。
+        """
+        llm_response = await self._llm.generate(system_prompt, user_prompt)
         instruction, error = self._parse_and_validate_instruction(llm_response)
         if instruction:
             return instruction, ""
 
         repair_prompt = self._build_repair_prompt(user_input, error)
-        llm_response = await self._llm.generate(system_prompt, repair_prompt, history=history)
+        llm_response = await self._llm.generate(system_prompt, repair_prompt)
         instruction, error = self._parse_and_validate_instruction(llm_response)
         if instruction:
             return instruction, ""
@@ -382,7 +386,9 @@ class ReactNodes:
                 self._context,
                 available_workers=self._workers,
             )
-            user_prompt = self._prompt_builder.build_user_prompt(user_input, history=None)
+            # 传入历史记录，让 LLM 看到之前执行的命令结果
+            # 这样在第二轮迭代时，LLM 能基于命令输出生成 chat.respond 总结
+            user_prompt = self._prompt_builder.build_user_prompt(user_input, history=history)
 
             instruction, error = await self._generate_instruction_with_retry(
                 system_prompt=system_prompt,
@@ -451,10 +457,9 @@ class ReactNodes:
             }
 
         # 判断是否需要审批
-        # 高风险操作通过审批流程确认，而非直接阻止
-        needs_approval = risk in ["medium", "high"] or (
-            risk == "safe" and not self._auto_approve_safe
-        )
+        # 只有 high 风险操作需要用户确认（如 kill、rm、docker rm 等）
+        # safe 和 medium（查看、安装等）直接执行，不打断用户
+        needs_approval = risk == "high"
 
         return {
             "risk_level": risk,

@@ -66,16 +66,19 @@ class TestShellWorker:
         assert result.data.get("blocked") is True
 
     @pytest.mark.asyncio
-    async def test_command_not_in_whitelist_blocked(self) -> None:
-        """测试不在白名单内的命令被阻止"""
+    async def test_command_not_in_whitelist_handled_by_analyzer(self) -> None:
+        """白名单未匹配的命令由规则引擎处理（未知命令默认 medium，允许执行）"""
         worker = ShellWorker()
+        # my-custom-script.sh 不在白名单，规则引擎会判定为 medium 并允许执行
+        # 但由于实际文件不存在，命令执行会失败（不是被阻止）
         result = await worker.execute(
             "execute_command",
             {"command": "my-custom-script.sh"},
         )
-
-        assert result.success is False
-        assert "not in whitelist" in result.message.lower()
+        # 命令被允许执行（但可能因文件不存在而执行失败）
+        # 关键是不再出现 "not in whitelist" 阻止信息
+        if result.success is False:
+            assert "blocked" not in result.message.lower() or "not in whitelist" not in result.message.lower()
 
     @pytest.mark.asyncio
     async def test_command_chaining_blocked(self) -> None:

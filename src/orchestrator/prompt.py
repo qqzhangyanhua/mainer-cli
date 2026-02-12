@@ -90,6 +90,8 @@ Worker Details:
   - ONLY action: "execute_command"
   - Required args: {{"command": "string"}}
   - Optional args: {{"working_dir": "string"}}
+  - You can execute ANY reasonable ops command. The system has an intelligent risk analyzer
+    that automatically evaluates command safety. Do NOT limit yourself to a predefined list.
   - CRITICAL: Use FULL commands to show complete information
   - ⚠️ OS-SPECIFIC COMMANDS (check Current Environment above!):
     * Kill process on port:
@@ -255,9 +257,9 @@ Output format:
 
         # 添加历史记录
         if history:
-            parts.append("Previous conversation:")
+            has_shell_result = False
+            parts.append("Previous actions and results:")
             for entry in history:
-                # 显示用户的原始输入
                 if entry.user_input:
                     parts.append(f"- User: {entry.user_input}")
 
@@ -271,7 +273,19 @@ Output format:
                         truncate_note = " [OUTPUT TRUNCATED]" if truncated else ""
                         parts.append(f"  Output{truncate_note}:")
                         parts.append(f"```\n{raw_output}\n```")
+
+                if entry.instruction.worker == "shell":
+                    has_shell_result = True
             parts.append("")
+
+            # 当已有 shell 执行结果时，强制要求 LLM 用 chat.respond 总结
+            if has_shell_result:
+                parts.append(
+                    "IMPORTANT: The command above has ALREADY been executed. "
+                    "Do NOT run it again. You MUST now use chat.respond to summarize "
+                    "the result in natural language (Chinese) for the user."
+                )
+                parts.append("")
 
         parts.append(f"User request: {user_input}")
 

@@ -52,7 +52,7 @@ class TestPromptBuilder:
         prompt = builder.build_user_prompt("继续清理", history=history)
 
         assert "继续清理" in prompt
-        assert "Previous conversation:" in prompt
+        assert "Previous actions and results:" in prompt
         assert "check_disk_usage" in prompt
         assert "Disk 90% used" in prompt
 

@@ -290,3 +290,71 @@ class TestReactNodesSafetyPolicy:
         assert result.get("is_error") is None
         assert result.get("risk_level") == "high"
         assert result.get("needs_approval") is True
+
+    @pytest.mark.asyncio
+    async def test_medium_risk_no_approval_needed(
+        self,
+        mock_llm: MockLLMClient,
+        workers: dict[str, BaseWorker],
+        context: EnvironmentContext,
+    ) -> None:
+        """测试 medium 风险操作（如安装包、查看版本）不需要用户确认"""
+        nodes = ReactNodes(
+            llm_client=mock_llm,
+            workers=workers,
+            context=context,
+            dry_run=False,
+            max_risk="high",
+            auto_approve_safe=True,
+            require_dry_run_for_high_risk=False,
+        )
+
+        state = {
+            "current_instruction": {
+                "worker": "shell",
+                "action": "execute_command",
+                "args": {"command": "brew install nginx"},
+                "risk_level": "medium",
+                "dry_run": False,
+            },
+            "is_simple_intent": False,
+        }
+
+        result = await nodes.safety_node(state)
+
+        assert result.get("is_error") is None
+        assert result.get("needs_approval") is False
+
+    @pytest.mark.asyncio
+    async def test_safe_risk_no_approval_needed(
+        self,
+        mock_llm: MockLLMClient,
+        workers: dict[str, BaseWorker],
+        context: EnvironmentContext,
+    ) -> None:
+        """测试 safe 操作（如查看版本、列出文件）不需要用户确认"""
+        nodes = ReactNodes(
+            llm_client=mock_llm,
+            workers=workers,
+            context=context,
+            dry_run=False,
+            max_risk="high",
+            auto_approve_safe=True,
+            require_dry_run_for_high_risk=False,
+        )
+
+        state = {
+            "current_instruction": {
+                "worker": "shell",
+                "action": "execute_command",
+                "args": {"command": "node --version"},
+                "risk_level": "safe",
+                "dry_run": False,
+            },
+            "is_simple_intent": False,
+        }
+
+        result = await nodes.safety_node(state)
+
+        assert result.get("is_error") is None
+        assert result.get("needs_approval") is False

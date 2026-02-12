@@ -7,7 +7,8 @@ import os
 import re
 from typing import Tuple, Union, cast
 
-from src.orchestrator.command_whitelist import check_command_safety
+from src.orchestrator.command_whitelist import CommandCheckResult, check_command_safety
+from src.orchestrator.risk_analyzer import analyze_command_risk
 from src.types import ArgValue, WorkerResult
 from src.workers.base import BaseWorker
 
@@ -111,14 +112,24 @@ class ShellWorker(BaseWorker):
                 message="working_dir must be a string",
             )
 
-        # 白名单安全检查
+        # 白名单安全检查 + 规则引擎兜底
         check_result = check_command_safety(command)
-        if not check_result.allowed:
+        if check_result.allowed is False:
+            # 白名单明确拒绝（黑名单/危险模式/禁止标志）
             return WorkerResult(
                 success=False,
                 message=f"Command blocked: {check_result.reason}",
                 data={"blocked": True, "command": command, "reason": check_result.reason},
             )
+        elif check_result.allowed is None:
+            # 白名单未匹配 → 规则引擎接管
+            check_result = analyze_command_risk(command)
+            if not check_result.allowed:
+                return WorkerResult(
+                    success=False,
+                    message=f"Command blocked by risk analyzer: {check_result.reason}",
+                    data={"blocked": True, "command": command, "reason": check_result.reason},
+                )
 
         if dry_run:
             risk_info = f" [risk: {check_result.risk_level}]"

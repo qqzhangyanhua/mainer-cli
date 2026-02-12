@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from src.orchestrator.command_whitelist import check_command_safety
+from src.orchestrator.risk_analyzer import analyze_command_risk
 from src.types import Instruction, RiskLevel
 
 # 危险模式定义（用于非 shell 命令的通用检查）
@@ -47,14 +48,23 @@ def check_safety(instruction: Instruction) -> RiskLevel:
     Returns:
         RiskLevel: safe | medium | high
     """
-    # 对 Shell 命令使用白名单精确检查
+    # 对 Shell 命令使用白名单精确检查 + 规则引擎兜底
     if instruction.worker == "shell" and instruction.action == "execute_command":
         command = instruction.args.get("command", "")
         if isinstance(command, str) and command:
             result = check_command_safety(command)
-            if not result.allowed:
-                return "high"  # 不在白名单的命令视为高风险
-            return result.risk_level
+            if result.allowed is True:
+                # 白名单快速通道
+                return result.risk_level if result.risk_level is not None else "safe"
+            elif result.allowed is False:
+                # 白名单明确拒绝（黑名单/危险模式）
+                return "high"
+            else:
+                # 白名单未匹配 → 规则引擎接管
+                analyzer_result = analyze_command_risk(command)
+                if not analyzer_result.allowed:
+                    return "high"
+                return analyzer_result.risk_level if analyzer_result.risk_level is not None else "medium"
 
     # 其他 Worker 使用模式匹配检查
     command_text = _instruction_to_text(instruction)

@@ -249,10 +249,13 @@ class TestCheckCommandSafety:
         assert result.allowed is False
 
     # ========== 不在白名单的命令测试 ==========
-    def test_unknown_command_blocked(self) -> None:
+    def test_unknown_command_unmatched(self) -> None:
+        """白名单未匹配的命令应返回 allowed=None（交由规则引擎）"""
         result = check_command_safety("my-custom-script.sh")
-        assert result.allowed is False
-        assert "not in whitelist" in result.reason.lower()
+        assert result.allowed is None
+        assert result.risk_level is None
+        assert result.matched_by == "none"
+        assert "not matched" in result.reason.lower()
 
     # ========== 危险模式测试 ==========
     def test_command_chaining_blocked(self) -> None:

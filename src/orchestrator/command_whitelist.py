@@ -20,10 +20,11 @@ from src.types import RiskLevel
 class CommandCheckResult:
     """命令检查结果"""
 
-    allowed: bool  # 是否允许执行
-    risk_level: RiskLevel  # 风险等级
+    allowed: Optional[bool]  # 是否允许执行（None=未匹配，交由规则引擎判定）
+    risk_level: Optional[RiskLevel]  # 风险等级（None=未匹配时无等级）
     reason: str  # 允许/拒绝原因
     matched_rule: Optional[CommandRule] = None  # 匹配的规则
+    matched_by: str = "whitelist"  # 匹配来源: "whitelist" | "risk_analyzer" | "none"
 
 
 def _extract_subcommand_and_args(
@@ -70,9 +71,17 @@ def parse_command(command: str) -> tuple[str, Optional[str], list[str]]:
             "git",
             "systemctl",
             "apt",
+            "apt-get",
             "yum",
+            "dnf",
+            "brew",
             "npm",
+            "yarn",
+            "pnpm",
             "pip",
+            "pip3",
+            "kubectl",
+            "helm",
         }:
             subcommand, args = _extract_subcommand_and_args(tokens, 1)
         else:
@@ -201,8 +210,13 @@ def check_command_safety(command: str) -> CommandCheckResult:
     # 2. 解析命令
     base_command, subcommand, args = parse_command(command)
 
-    # 3. 检查绝对禁止列表
-    if base_command in BLOCKED_COMMANDS:
+    # 3. 检查绝对禁止列表（支持前缀匹配，如 mkfs.ext4 → mkfs）
+    blocked_match = base_command in BLOCKED_COMMANDS
+    if not blocked_match:
+        # 处理 mkfs.ext4 这类带后缀的命令
+        base_prefix = base_command.split(".")[0] if "." in base_command else ""
+        blocked_match = base_prefix in BLOCKED_COMMANDS
+    if blocked_match:
         return CommandCheckResult(
             allowed=False,
             risk_level="high",
@@ -213,13 +227,25 @@ def check_command_safety(command: str) -> CommandCheckResult:
     rule = find_matching_rule(base_command, subcommand)
 
     if rule is None:
+        # 4.1 特殊处理：--version / --help / -v / -V 等纯信息查看参数
+        # 对白名单中有子命令规则的命令，允许 version/help 查看
+        info_only_flags = {"--version", "--help", "-v", "-V", "-h", "version", "help"}
+        all_args = ([subcommand] if subcommand else []) + args
+        if all_args and all(a in info_only_flags for a in all_args):
+            # 检查该命令是否在白名单中有任何规则
+            has_any_rule = any(r.base_command == base_command for r in COMMAND_WHITELIST)
+            if has_any_rule:
+                return CommandCheckResult(
+                    allowed=True,
+                    risk_level="safe",
+                    reason=f"Allowed: {base_command} version/help query",
+                )
+
         return CommandCheckResult(
-            allowed=False,
-            risk_level="high",
-            reason=(
-                f"Command '{base_command}' is not in whitelist. "
-                f"Use dedicated Workers for specific tasks."
-            ),
+            allowed=None,
+            risk_level=None,
+            reason=f"Command '{base_command}' not matched in whitelist",
+            matched_by="none",
         )
 
     # 5. 检查禁止参数
@@ -252,6 +278,14 @@ def check_command_safety(command: str) -> CommandCheckResult:
 
 
 def get_command_risk_level(command: str) -> RiskLevel:
-    """获取命令的风险等级"""
+    """获取命令的风险等级
+
+    如果白名单未匹配，会调用规则引擎进行分析。
+    """
     result = check_command_safety(command)
-    return result.risk_level
+    if result.allowed is None:
+        # 白名单未匹配，调用规则引擎
+        from src.orchestrator.risk_analyzer import analyze_command_risk
+
+        result = analyze_command_risk(command)
+    return result.risk_level if result.risk_level is not None else "medium"
