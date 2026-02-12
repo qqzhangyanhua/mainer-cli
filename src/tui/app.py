@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import uuid
 from pathlib import Path
 from typing import cast
@@ -14,13 +15,13 @@ try:
 except ImportError:
     HAS_CLIPBOARD = False
 
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
 from textual.geometry import Offset
 from textual.timer import Timer
 from textual.widgets import (
-    Button,
     Header,
     Input,
     ListItem,
@@ -28,8 +29,8 @@ from textual.widgets import (
     LoadingIndicator,
     RichLog,
     Static,
+    TextArea,
 )
-from textual import events
 
 from src import __version__
 from src.config.manager import ConfigManager
@@ -45,6 +46,7 @@ from src.tui.commands import (
 )
 from src.tui.screens import ConfirmationScreen, UserChoiceScreen
 from src.tui.widgets import (
+    HistoryWriter,
     SlashCommandSuggester,
     format_path,
     is_subsequence,
@@ -68,6 +70,10 @@ class OpsAIApp(App[str]):
         height: 1fr;
         border: solid green;
         padding: 1;
+    }
+
+    #history.hidden {
+        display: none;
     }
 
     #input-container {
@@ -201,12 +207,34 @@ class OpsAIApp(App[str]):
         margin-top: 1;
         text-style: bold;
     }
+
+    #history-copy {
+        height: 1fr;
+        border: solid $warning;
+        padding: 1;
+    }
+
+    #history-copy.hidden {
+        display: none;
+    }
+
+    #copy-mode-banner {
+        height: 1;
+        background: $warning;
+        color: $text;
+        text-align: center;
+        text-style: bold;
+    }
+
+    #copy-mode-banner.hidden {
+        display: none;
+    }
     """
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
         Binding("ctrl+l", "clear", "Clear"),
-        Binding("ctrl+y", "copy_last", "Copy Last", show=False),
+        Binding("ctrl+y", "toggle_copy_mode", "Copy Mode", show=True),
     ]
 
     def __init__(self) -> None:
@@ -239,10 +267,18 @@ class OpsAIApp(App[str]):
         self._slash_menu_items: list[str] = []
         self._slash_menu_visible: bool = False
         self._loading_text: str = "思考中..."
+        self._plain_text_buffer: list[str] = []
+        self._copy_mode: bool = False
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield RichLog(id="history", wrap=True, highlight=True, markup=True)
+        yield TextArea(id="history-copy", read_only=True, classes="hidden")
+        yield Static(
+            "COPY MODE - select text then Ctrl+C to copy, Ctrl+Y or Escape to exit",
+            id="copy-mode-banner",
+            classes="hidden",
+        )
         with Container(id="loading-container"):
             with Horizontal():
                 yield LoadingIndicator(id="loading-indicator")
@@ -267,6 +303,11 @@ class OpsAIApp(App[str]):
 
         input_widget.focus()
 
+    def _get_writer(self) -> HistoryWriter:
+        """返回 HistoryWriter 代理，所有 write 调用都通过它同步纯文本缓冲"""
+        rich_log = self.query_one("#history", RichLog)
+        return HistoryWriter(rich_log, self._plain_text_buffer)
+
     def _is_first_run(self) -> bool:
         marker_file = Path.home() / ".opsai" / ".first_run_complete"
         return not marker_file.exists()
@@ -277,7 +318,7 @@ class OpsAIApp(App[str]):
         marker_file.touch()
 
     def _show_welcome_banner(self) -> None:
-        history = self.query_one("#history", RichLog)
+        writer = self._get_writer()
         version = __version__
         model = self._config.llm.model
         cwd = str(Path.cwd()).replace(str(Path.home()), "~")
@@ -296,16 +337,16 @@ class OpsAIApp(App[str]):
             "\n"
             "[dim]Commands: /help /config /clear /history[/dim]\n"
         )
-        history.write(banner)
+        writer.write(banner)
 
     def _show_welcome_wizard(self) -> None:
-        history = self.query_one("#history", RichLog)
-        history.write("[dim]正在检测环境...[/dim]")
+        writer = self._get_writer()
+        writer.write("[dim]正在检测环境...[/dim]")
         detector = EnvironmentDetector()
         env_info = detector.detect()
         welcome_msg = detector.generate_welcome_message(env_info)
-        history.clear()
-        history.write(f"[bold green]{welcome_msg}[/bold green]")
+        writer.clear()
+        writer.write(f"[bold green]{welcome_msg}[/bold green]")
         self._mark_first_run_complete()
 
     # ── 输入事件 ──────────────────────────────────────────
@@ -314,6 +355,11 @@ class OpsAIApp(App[str]):
         self._update_slash_menu(event.value)
 
     def on_key(self, event: events.Key) -> None:
+        if self._copy_mode:
+            if event.key == "escape":
+                self._exit_copy_mode()
+                event.stop()
+            return
         if not self._slash_menu_visible:
             return
         input_widget = self.query_one("#user-input", Input)
@@ -407,8 +453,8 @@ class OpsAIApp(App[str]):
                 "executing": "[dim][bold]Executing[/bold][/dim]",
                 "error": "[dim][bold]Error[/bold][/dim]",
             }.get(step, f"[dim][bold]{step}[/bold][/dim]")
-            history = self.query_one("#history", RichLog)
-            history.write(f"{step_label} {message}")
+            writer = self._get_writer()
+            writer.write(f"{step_label} {message}")
 
     def _show_loading(self, text: str = "思考中...") -> None:
         loading_container = self.query_one("#loading-container", Container)
@@ -431,7 +477,10 @@ class OpsAIApp(App[str]):
         if not user_input:
             return
 
-        history = self.query_one("#history", RichLog)
+        if self._copy_mode:
+            return
+
+        writer = self._get_writer()
         input_widget = self.query_one("#user-input", Input)
         input_widget.value = ""
         self._update_slash_menu("")
@@ -439,19 +488,19 @@ class OpsAIApp(App[str]):
         if user_input.startswith("/"):
             if self._handle_slash_command(user_input):
                 return
-            history.write(f"[yellow]未知命令：{user_input}，输入 /help 查看帮助[/yellow]")
+            writer.write(f"[yellow]未知命令：{user_input}，输入 /help 查看帮助[/yellow]")
             return
 
         if self._current_task and not self._current_task.done():
-            history.write("[yellow]已有任务执行中，请等待完成后再输入[/yellow]")
+            writer.write("[yellow]已有任务执行中，请等待完成后再输入[/yellow]")
             return
 
-        history.write(f"[bold cyan]You:[/bold cyan] {user_input}")
+        writer.write(f"[bold cyan]You:[/bold cyan] {user_input}")
         self._show_loading("思考中...")
         self._current_task = asyncio.create_task(self._run_request(user_input))
 
     async def _run_request(self, user_input: str) -> None:
-        history = self.query_one("#history", RichLog)
+        writer = self._get_writer()
         try:
             session_id = uuid.uuid4().hex
             result = await self._engine.react_loop_graph(
@@ -498,46 +547,42 @@ class OpsAIApp(App[str]):
             self._last_output = result
             self._render_result(result)
         except Exception as e:
-            history.write(f"[bold red]Error:[/bold red] {e!s}")
+            writer.write(f"[bold red]Error:[/bold red] {e!s}")
         finally:
             self._hide_loading()
             self._current_task = None
 
     def _render_result(self, result: str) -> None:
-        history = self.query_one("#history", RichLog)
+        writer = self._get_writer()
         if "Command:" in result and "Output:" in result:
             lines = result.split("\n")
-            history.write("")
+            writer.write("")
             command_shown = False
             for line in lines:
                 if line.startswith("Command:"):
                     if not command_shown:
                         cmd = line.replace("Command: ", "")
-                        history.write(f"[cyan]$ {cmd}[/cyan]")
+                        writer.write(f"[cyan]$ {cmd}[/cyan]")
                         command_shown = True
-                elif line.startswith("Output:"):
-                    continue
-                elif line.startswith("Error:") or line.startswith("Stderr:"):
-                    continue
-                elif line.startswith("Exit code:"):
+                elif line.startswith(("Output:", "Error:", "Stderr:", "Exit code:")):
                     continue
                 elif line.strip() and not line.startswith("$ "):
-                    history.write(line)
+                    writer.write(line)
         else:
-            history.write(f"\n[bold green]Assistant:[/bold green] {result}")
+            writer.write(f"\n[bold green]Assistant:[/bold green] {result}")
 
     # ── 斜杠命令 ─────────────────────────────────────────
 
     def _handle_slash_command(self, user_input: str) -> bool:
         self._hide_slash_menu()
         command_line = user_input[1:].strip()
+        writer = self._get_writer()
         if not command_line:
-            show_help(self.query_one("#history", RichLog))
+            show_help(writer)
             return True
 
         parts = command_line.split()
         command = parts[0].lower()
-        history = self.query_one("#history", RichLog)
 
         if command == "clear":
             self._clear_conversation()
@@ -546,10 +591,10 @@ class OpsAIApp(App[str]):
             self.exit()
             return True
         if command == "help":
-            show_help(history)
+            show_help(writer)
             return True
         if command == "config":
-            new_config = show_config(history, self._config_manager)
+            new_config = show_config(writer, self._config_manager)
             if new_config is not None:
                 self._config = new_config  # type: ignore[assignment]
                 self._update_status_bar()
@@ -564,18 +609,16 @@ class OpsAIApp(App[str]):
             self._handle_verbose_command(parts[1:] if len(parts) > 1 else [])
             return True
         if command == "history":
-            show_history_summary(
-                history, self._session_history, parts[1:] if len(parts) > 1 else []
-            )
+            show_history_summary(writer, self._session_history, parts[1:] if len(parts) > 1 else [])
             return True
         if command == "pwd":
             cwd = format_path(Path.cwd())
-            history.write(f"[bold green]当前目录[/bold green] {cwd}")
+            writer.write(f"[bold green]当前目录[/bold green] {cwd}")
             return True
         if command == "export":
             export_history(
                 parts[1:] if len(parts) > 1 else [],
-                history,
+                writer,
                 self._session_history,
                 self._config.llm.model,
             )
@@ -583,9 +626,12 @@ class OpsAIApp(App[str]):
         if command in {"scenario", "scenarios"}:
             handle_scenario_command(
                 parts[1:] if len(parts) > 1 else [],
-                history,
+                writer,
                 self._scenario_manager,
             )
+            return True
+        if command == "copy":
+            self._handle_copy_command(parts[1:] if len(parts) > 1 else [])
             return True
 
         return False
@@ -593,22 +639,81 @@ class OpsAIApp(App[str]):
     def action_clear(self) -> None:
         self._clear_conversation()
 
-    def action_copy_last(self) -> None:
-        history = self.query_one("#history", RichLog)
-        if not HAS_CLIPBOARD:
-            history.write("[yellow]Clipboard feature not available.[/yellow]")
-            history.write("[dim]   Install with: pip install opsai[clipboard][/dim]")
+    def action_toggle_copy_mode(self) -> None:
+        if self._copy_mode:
+            self._exit_copy_mode()
+        else:
+            self._enter_copy_mode()
+
+    def _enter_copy_mode(self) -> None:
+        self._copy_mode = True
+        rich_log = self.query_one("#history", RichLog)
+        copy_area = self.query_one("#history-copy", TextArea)
+        banner = self.query_one("#copy-mode-banner", Static)
+        input_widget = self.query_one("#user-input", Input)
+
+        rich_log.add_class("hidden")
+        copy_area.text = "\n".join(self._plain_text_buffer)
+        copy_area.remove_class("hidden")
+        banner.remove_class("hidden")
+        input_widget.disabled = True
+        copy_area.focus()
+
+    def _exit_copy_mode(self) -> None:
+        self._copy_mode = False
+        rich_log = self.query_one("#history", RichLog)
+        copy_area = self.query_one("#history-copy", TextArea)
+        banner = self.query_one("#copy-mode-banner", Static)
+        input_widget = self.query_one("#user-input", Input)
+
+        copy_area.add_class("hidden")
+        banner.add_class("hidden")
+        rich_log.remove_class("hidden")
+        input_widget.disabled = False
+        input_widget.focus()
+
+    def _handle_copy_command(self, args: list[str]) -> None:
+        writer = self._get_writer()
+        if not args:
+            self._do_copy(self._last_output if self._last_output else "")
+            if self._last_output:
+                writer.write("[dim]已复制最后一条输出到剪贴板[/dim]")
+            else:
+                writer.write("[yellow]暂无输出可复制[/yellow]")
             return
-        if self._last_output:
-            try:
-                pyperclip.copy(self._last_output)
-                history.write("[dim]Copied to clipboard[/dim]")
-            except Exception as e:
-                history.write(f"[red]Failed to copy: {e}[/red]")
+
+        sub = args[0].lower()
+        if sub == "mode":
+            self._enter_copy_mode()
+            return
+        if sub == "all":
+            text = "\n".join(self._plain_text_buffer)
+            self._do_copy(text)
+            writer.write("[dim]已复制全部历史到剪贴板[/dim]")
+            return
+        if sub.isdigit():
+            n = int(sub)
+            recent = self._plain_text_buffer[-n:] if n > 0 else []
+            text = "\n".join(recent)
+            self._do_copy(text)
+            writer.write(f"[dim]已复制最近 {len(recent)} 条到剪贴板[/dim]")
+            return
+
+        writer.write("[yellow]用法：/copy [all|N|mode][/yellow]")
+
+    def _do_copy(self, text: str) -> None:
+        if not text:
+            return
+        try:
+            self.copy_to_clipboard(text)
+        except (AttributeError, Exception):
+            if HAS_CLIPBOARD:
+                with contextlib.suppress(Exception):
+                    pyperclip.copy(text)
 
     def _clear_conversation(self) -> None:
-        history = self.query_one("#history", RichLog)
-        history.clear()
+        writer = self._get_writer()
+        writer.clear()
         self._session_history.clear()
         self._last_output = ""
         self._set_status("已清空当前对话")
@@ -647,7 +752,7 @@ class OpsAIApp(App[str]):
             status.update(base)
 
     def _handle_status_command(self, args: list[str]) -> None:
-        history = self.query_one("#history", RichLog)
+        writer = self._get_writer()
         if not args:
             self._status_enabled = not self._status_enabled
         else:
@@ -659,15 +764,15 @@ class OpsAIApp(App[str]):
             elif value == "toggle":
                 self._status_enabled = not self._status_enabled
             else:
-                history.write("[yellow]用法：/status on|off|toggle[/yellow]")
+                writer.write("[yellow]用法：/status on|off|toggle[/yellow]")
                 return
         self._update_status_bar()
         state = "开启" if self._status_enabled else "关闭"
         self._set_status(f"状态栏已{state}")
-        history.write(f"[dim]状态栏已{state}[/dim]")
+        writer.write(f"[dim]状态栏已{state}[/dim]")
 
     def _handle_verbose_command(self, args: list[str]) -> None:
-        history = self.query_one("#history", RichLog)
+        writer = self._get_writer()
         if not args:
             self._verbose_enabled = not self._verbose_enabled
         else:
@@ -679,7 +784,7 @@ class OpsAIApp(App[str]):
             elif value == "toggle":
                 self._verbose_enabled = not self._verbose_enabled
             else:
-                history.write("[yellow]用法：/verbose on|off|toggle[/yellow]")
+                writer.write("[yellow]用法：/verbose on|off|toggle[/yellow]")
                 return
 
         # 持久化到配置文件
@@ -688,16 +793,16 @@ class OpsAIApp(App[str]):
 
         state = "开启" if self._verbose_enabled else "关闭"
         self._set_status(f"思考过程展示已{state}")
-        history.write(f"[dim]思考过程展示已{state}[/dim]")
+        writer.write(f"[dim]思考过程展示已{state}[/dim]")
 
     def _handle_theme_command(self, args: list[str]) -> None:
-        history = self.query_one("#history", RichLog)
+        writer = self._get_writer()
         mode = args[0].lower() if args else "toggle"
         if mode not in {"toggle", "on", "off", "dark", "light"}:
-            history.write("[yellow]用法：/theme toggle|on|off[/yellow]")
+            writer.write("[yellow]用法：/theme toggle|on|off[/yellow]")
             return
         if not hasattr(self, "dark"):
-            history.write("[yellow]当前 Textual 版本不支持主题切换[/yellow]")
+            writer.write("[yellow]当前 Textual 版本不支持主题切换[/yellow]")
             return
         if mode in {"toggle"}:
             self.dark = not self.dark
@@ -707,7 +812,7 @@ class OpsAIApp(App[str]):
             self.dark = False
         theme_name = "暗色" if self.dark else "亮色"
         self._set_status(f"已切换为{theme_name}主题")
-        history.write(f"[dim]已切换为{theme_name}主题[/dim]")
+        writer.write(f"[dim]已切换为{theme_name}主题[/dim]")
 
     # ── 斜杠命令下拉菜单 ─────────────────────────────────
 
@@ -761,6 +866,7 @@ class OpsAIApp(App[str]):
             ("/them", "/theme 的别名", ""),
             ("/verbose", f"思考过程展示开关（当前: {verbose_state}）", ""),
             ("/status", f"状态栏开关（当前: {status_state}）", ""),
+            ("/copy", "复制输出（/copy all|N|mode）", ""),
             ("/exit", "退出", ""),
         ]
 
@@ -803,7 +909,7 @@ class OpsAIApp(App[str]):
                 Static(marker, classes="slash-tag"),
             )
             item = ListItem(row)
-            setattr(item, "_command", cmd)
+            item._command = cmd
             items.append(item)
             command_names.append(cmd)
 

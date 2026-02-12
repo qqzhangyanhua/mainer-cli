@@ -7,18 +7,17 @@ from datetime import datetime
 from pathlib import Path
 
 from rich.syntax import Syntax
-from textual.widgets import RichLog
 
 from src import __version__
 from src.config.manager import ConfigManager
 from src.orchestrator.scenarios import ScenarioManager
 from src.tui.widgets import format_path, mask_secret
-from src.types import ConversationEntry
+from src.types import ConversationEntry, HistoryWritable
 
 
 def handle_slash_command(
     command_line: str,
-    history: RichLog,
+    history: HistoryWritable,
     config_manager: ConfigManager,
     config: object,
     scenario_manager: ScenarioManager,
@@ -44,7 +43,7 @@ def handle_slash_command(
     raise NotImplementedError("Commands are handled inline in OpsAIApp")
 
 
-def show_help(history: RichLog) -> None:
+def show_help(history: HistoryWritable) -> None:
     """展示帮助信息"""
     history.write("[bold green]可用命令[/bold green]")
     history.write("/help     - 显示帮助")
@@ -57,12 +56,13 @@ def show_help(history: RichLog) -> None:
     history.write("/theme    - 切换主题（/theme toggle|on|off）")
     history.write("/verbose  - 思考过程展示开关（/verbose on|off|toggle）")
     history.write("/status   - 状态栏开关（/status on|off|toggle）")
+    history.write("/copy     - 复制输出（/copy all|N|mode）")
     history.write("/exit     - 退出")
-    history.write("[dim]快捷键：Ctrl+C 退出，Ctrl+L 清空对话[/dim]")
+    history.write("[dim]快捷键：Ctrl+C 退出，Ctrl+L 清空对话，Ctrl+Y 复制模式[/dim]")
 
 
 def show_config(
-    history: RichLog,
+    history: HistoryWritable,
     config_manager: ConfigManager,
 ) -> object:
     """展示当前配置（敏感字段脱敏），返回新配置对象或 None"""
@@ -86,7 +86,7 @@ def show_config(
 
 
 def show_history_summary(
-    history: RichLog,
+    history: HistoryWritable,
     session_history: list[ConversationEntry],
     args: list[str] | None = None,
 ) -> None:
@@ -128,7 +128,7 @@ def show_history_summary(
 
 
 def show_scenarios(
-    history: RichLog,
+    history: HistoryWritable,
     scenario_manager: ScenarioManager,
 ) -> None:
     """显示所有场景列表"""
@@ -165,7 +165,7 @@ def show_scenarios(
 
 def handle_scenario_command(
     args: list[str],
-    history: RichLog,
+    history: HistoryWritable,
     scenario_manager: ScenarioManager,
 ) -> None:
     """处理场景命令"""
@@ -218,7 +218,7 @@ def handle_scenario_command(
 
 def export_history(
     args: list[str],
-    history: RichLog,
+    history: HistoryWritable,
     session_history: list[ConversationEntry],
     config_model: str,
 ) -> None:

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import re
+from io import StringIO
 from pathlib import Path
 from typing import Callable
 
+from rich.console import Console
 from textual.suggester import Suggester
+from textual.widgets import RichLog
 
 
 class SlashCommandSuggester(Suggester):
@@ -17,6 +21,36 @@ class SlashCommandSuggester(Suggester):
 
     async def get_suggestion(self, value: str) -> str | None:
         return self._suggestion_provider(value)
+
+
+_RICH_MARKUP_RE = re.compile(r"\[/?[a-zA-Z][^\]]*\]")
+
+
+def strip_rich_markup(text: str) -> str:
+    """剥离 Rich 标记，返回纯文本"""
+    return _RICH_MARKUP_RE.sub("", text)
+
+
+class HistoryWriter:
+    """RichLog 代理：同时维护纯文本缓冲区，供复制模式使用"""
+
+    def __init__(self, rich_log: RichLog, plain_buffer: list[str]) -> None:
+        self._rich_log = rich_log
+        self._plain_buffer = plain_buffer
+
+    def write(self, content: object) -> None:
+        self._rich_log.write(content)
+        if isinstance(content, str):
+            self._plain_buffer.append(strip_rich_markup(content))
+        else:
+            buf = StringIO()
+            console = Console(file=buf, no_color=True, width=120)
+            console.print(content)
+            self._plain_buffer.append(buf.getvalue().rstrip())
+
+    def clear(self) -> None:
+        self._rich_log.clear()
+        self._plain_buffer.clear()
 
 
 def format_path(path: Path) -> str:

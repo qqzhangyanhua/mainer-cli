@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, Protocol, Union, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -95,3 +95,11 @@ class GitHubFileInfo(BaseModel):
     type: Literal["file", "dir"] = Field(..., description="类型：文件或目录")
     path: str = Field(..., description="文件路径")
     size: int = Field(default=0, description="文件大小（字节）")
+
+
+@runtime_checkable
+class HistoryWritable(Protocol):
+    """可写历史视图的协议，兼容 RichLog 和 HistoryWriter"""
+
+    def write(self, content: object) -> None: ...
+    def clear(self) -> None: ...

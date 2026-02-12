@@ -14,7 +14,8 @@
       "Bash(git commit:*)",
       "mcp__sequential-thinking__sequentialthinking",
       "Bash(git reset:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "WebSearch"
     ]
   }
 }
