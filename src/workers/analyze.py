@@ -7,7 +7,7 @@ import re
 from typing import Optional
 
 from src.llm.client import LLMClient
-from src.types import ArgValue, WorkerResult
+from src.types import ArgValue, WorkerResult, get_raw_output
 from src.workers.analyze_cache import (
     AnalyzeTemplate,
     AnalyzeTemplateCache,
@@ -293,9 +293,9 @@ Your response (JSON array only):"""
                 {"command": actual_cmd},
             )
 
-            if result.success and result.data and isinstance(result.data, dict):
-                raw_output = result.data.get("raw_output")
-                if raw_output and isinstance(raw_output, str):
+            if result.success:
+                raw_output = get_raw_output(result)
+                if raw_output:
                     results[actual_cmd] = raw_output
                 else:
                     results[actual_cmd] = result.message

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from src.context.environment import EnvironmentContext
-from src.types import ConversationEntry
+from src.types import ConversationEntry, get_raw_output, is_output_truncated
 from src.workers.base import BaseWorker
 
 
@@ -289,13 +289,12 @@ Output format:
                 parts.append(f"  Action: {entry.instruction.worker}.{entry.instruction.action}")
                 parts.append(f"  Result: {entry.result.message}")
                 # 传递完整输出用于 LLM 分析（如果存在）
-                if entry.result.data and isinstance(entry.result.data, dict):
-                    raw_output = entry.result.data.get("raw_output")
-                    if raw_output and isinstance(raw_output, str):
-                        truncated = entry.result.data.get("truncated", False)
-                        truncate_note = " [OUTPUT TRUNCATED]" if truncated else ""
-                        parts.append(f"  Output{truncate_note}:")
-                        parts.append(f"```\n{raw_output}\n```")
+                raw_output = get_raw_output(entry.result)
+                if raw_output:
+                    truncated = is_output_truncated(entry.result)
+                    truncate_note = " [OUTPUT TRUNCATED]" if truncated else ""
+                    parts.append(f"  Output{truncate_note}:")
+                    parts.append(f"```\n{raw_output}\n```")
 
                 if entry.instruction.worker == "shell":
                     has_shell_result = True

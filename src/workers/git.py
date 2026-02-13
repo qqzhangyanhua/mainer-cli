@@ -14,6 +14,7 @@ from typing import Union, cast
 
 from src.types import ArgValue, WorkerResult
 from src.workers.base import BaseWorker
+from src.workers.path_utils import normalize_path
 from src.workers.shell import ShellWorker
 
 
@@ -103,8 +104,7 @@ class GitWorker(BaseWorker):
                     success=False,
                     message="target_dir must be a string",
                 )
-            # 展开 ~ 路径
-            target_dir = str(Path(target_dir).expanduser())
+            target_dir = normalize_path(target_dir)
             path_source = "specified path"
 
         # 提取仓库名

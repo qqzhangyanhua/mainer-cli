@@ -97,6 +97,38 @@ class GitHubFileInfo(BaseModel):
     size: int = Field(default=0, description="文件大小（字节）")
 
 
+def get_raw_output(result: WorkerResult) -> Optional[str]:
+    """从 WorkerResult 中提取 raw_output
+
+    消除重复的 isinstance(result.data, dict) + result.data.get("raw_output") 模式
+
+    Args:
+        result: Worker 返回的结果
+
+    Returns:
+        raw_output 字符串，不存在时返回 None
+    """
+    if result.data and isinstance(result.data, dict):
+        raw_output = result.data.get("raw_output")
+        if isinstance(raw_output, str):
+            return raw_output
+    return None
+
+
+def is_output_truncated(result: WorkerResult) -> bool:
+    """检查 WorkerResult 的输出是否被截断
+
+    Args:
+        result: Worker 返回的结果
+
+    Returns:
+        是否被截断
+    """
+    if result.data and isinstance(result.data, dict):
+        return bool(result.data.get("truncated", False))
+    return False
+
+
 @runtime_checkable
 class HistoryWritable(Protocol):
     """可写历史视图的协议，兼容 RichLog 和 HistoryWriter"""

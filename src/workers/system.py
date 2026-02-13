@@ -10,6 +10,7 @@ from typing import Union, cast  # noqa: F401 – used by read-only methods
 from src.types import ArgValue, WorkerResult
 from src.workers.base import BaseWorker
 from src.workers.file_ops import append_to_file, replace_in_file, write_file
+from src.workers.path_utils import normalize_path
 
 
 class SystemWorker(BaseWorker):
@@ -101,7 +102,8 @@ class SystemWorker(BaseWorker):
                 simulated=True,
             )
 
-        path = Path(path_str)
+        normalized = normalize_path(path_str)
+        path = Path(normalized)
         if not path.exists():
             return WorkerResult(success=False, message=f"Path does not exist: {path}")
 
@@ -153,7 +155,8 @@ class SystemWorker(BaseWorker):
                 simulated=True,
             )
 
-        path = Path(path_str)
+        normalized = normalize_path(path_str)
+        path = Path(normalized)
         if not path.exists():
             return WorkerResult(success=False, message=f"Path does not exist: {path}")
 
@@ -201,7 +204,8 @@ class SystemWorker(BaseWorker):
             )
 
         try:
-            usage = shutil.disk_usage(path_str)
+            normalized = normalize_path(path_str, default="/")
+            usage = shutil.disk_usage(normalized)
             data: dict[str, int] = {
                 "total": usage.total // (1024 * 1024 * 1024),  # GB
                 "used": usage.used // (1024 * 1024 * 1024),

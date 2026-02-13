@@ -63,8 +63,9 @@ class TestCheckDangerousPatterns:
         assert "$(" in result_other
 
     def test_backtick_substitution(self) -> None:
-        result = check_dangerous_patterns("echo `whoami`")
-        assert result is not None
+        # echo 中的 ` 由 _check_echo_safety 在 check_command_safety 流程中检查
+        result = check_command_safety("echo `whoami`")
+        assert result.allowed is False
 
     def test_command_chaining(self) -> None:
         result = check_dangerous_patterns("ls && rm -rf /")
@@ -80,8 +81,9 @@ class TestCheckDangerousPatterns:
         result_safe = check_dangerous_patterns("echo 'content' > .env")
         assert result_safe is None, "echo to current dir should be allowed"
 
-        result_dangerous = check_dangerous_patterns("echo 'pwned' > /etc/passwd")
-        assert result_dangerous is not None, "echo to system dir should be blocked"
+        # echo 到系统目录由 _check_echo_safety 在 check_command_safety 流程中检查
+        result_dangerous = check_command_safety("echo 'pwned' > /etc/passwd")
+        assert result_dangerous.allowed is False, "echo to system dir should be blocked"
 
     def test_safe_command(self) -> None:
         result = check_dangerous_patterns("ls -la")

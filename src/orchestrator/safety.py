@@ -1,40 +1,20 @@
-"""安全检查模块 - Orchestrator 集中式拦截"""
+"""安全检查模块 - Orchestrator 集中式拦截
+
+向后兼容层：DANGER_PATTERNS 和 check_safety 的原有导入路径保持不变。
+实际逻辑已迁移到 PolicyEngine。
+"""
 
 from __future__ import annotations
 
-from src.orchestrator.command_whitelist import check_command_safety
-from src.orchestrator.risk_analyzer import analyze_command_risk
+from src.orchestrator.policy_engine import (
+    DANGER_PATTERNS,
+    PolicyEngine,
+    _instruction_to_text,
+)
 from src.types import Instruction, RiskLevel
 
-# 危险模式定义（用于非 shell 命令的通用检查）
-DANGER_PATTERNS: dict[str, list[str]] = {
-    "high": [
-        "rm -rf",
-        "kill -9",
-        "mkfs",  # 磁盘格式化
-        "dd if=",
-        "> /dev/",
-        ":(){:|:&};:",  # Fork bomb
-        "chmod -R 777",
-        "chown -R",
-        "delete_files",  # SystemWorker 删除文件操作
-        "replace_in_file",  # SystemWorker 文件替换操作
-    ],
-    "medium": [
-        "rm ",
-        "kill",
-        "docker rm",
-        "docker stop",
-        "systemctl stop",
-        "systemctl restart",
-        "reboot",
-        "shutdown",
-        "restart",  # 容器重启
-        "stop",  # 容器停止
-        "write_file",  # SystemWorker 写入文件
-        "append_to_file",  # SystemWorker 追加内容
-    ],
-}
+# 向后兼容：保持 from src.orchestrator.safety import DANGER_PATTERNS 可用
+__all__ = ["DANGER_PATTERNS", "check_safety", "_instruction_to_text"]
 
 
 def check_safety(instruction: Instruction) -> RiskLevel:
@@ -48,60 +28,5 @@ def check_safety(instruction: Instruction) -> RiskLevel:
     Returns:
         RiskLevel: safe | medium | high
     """
-    # 对 Shell 命令使用白名单精确检查 + 规则引擎兜底
-    if instruction.worker == "shell" and instruction.action == "execute_command":
-        command = instruction.args.get("command", "")
-        if isinstance(command, str) and command:
-            result = check_command_safety(command)
-            if result.allowed is True:
-                # 白名单快速通道
-                return result.risk_level if result.risk_level is not None else "safe"
-            elif result.allowed is False:
-                # 白名单明确拒绝（黑名单/危险模式）
-                return "high"
-            else:
-                # 白名单未匹配 → 规则引擎接管
-                analyzer_result = analyze_command_risk(command)
-                if not analyzer_result.allowed:
-                    return "high"
-                return analyzer_result.risk_level if analyzer_result.risk_level is not None else "medium"
-
-    # 其他 Worker 使用模式匹配检查
-    command_text = _instruction_to_text(instruction)
-
-    # 按风险等级从高到低检查
-    for level in ["high", "medium"]:
-        patterns = DANGER_PATTERNS.get(level, [])
-        for pattern in patterns:
-            if pattern in command_text:
-                return level  # type: ignore[return-value]
-
-    return "safe"
-
-
-def _instruction_to_text(instruction: Instruction) -> str:
-    """将指令转换为可检查的文本
-
-    Args:
-        instruction: 指令对象
-
-    Returns:
-        包含动作和参数的文本
-    """
-    parts = [instruction.action]
-
-    # 递归提取所有字符串值
-    def extract_strings(obj: object) -> list[str]:
-        strings: list[str] = []
-        if isinstance(obj, str):
-            strings.append(obj)
-        elif isinstance(obj, dict):
-            for v in obj.values():
-                strings.extend(extract_strings(v))
-        elif isinstance(obj, list):
-            for item in obj:
-                strings.extend(extract_strings(item))
-        return strings
-
-    parts.extend(extract_strings(instruction.args))
-    return " ".join(parts)
+    result = PolicyEngine.check_instruction(instruction)
+    return result.risk_level

@@ -93,47 +93,13 @@ def parse_command(command: str) -> tuple[str, Optional[str], list[str]]:
 def check_dangerous_patterns(command: str) -> Optional[str]:
     """检查危险模式
 
-    特殊处理：
-    - echo 命令允许使用 $() 和重定向（用于生成配置文件）
-    - 但禁止写入系统关键目录，仍然检查其他危险模式
+    echo 命令允许 $() 和重定向（用于生成配置文件），
+    由 _check_echo_safety 在规则匹配后单独校验。
     """
     command_stripped = command.strip()
 
-    # 特殊处理：echo 命令允许 $() 和重定向（但有限制）
+    # echo 命令跳过通用危险模式检查，由 _check_echo_safety 单独处理
     if command_stripped.startswith("echo "):
-        # 检查是否尝试写入危险的系统目录
-        # 注意：检查重定向目标（> 或 >> 后面的路径），而不是命令中所有路径
-        dangerous_write_paths = [
-            "/etc/",
-            "/sys/",
-            "/proc/",
-            "/dev/",
-            "/root/",
-            "/boot/",
-            "/usr/",
-            "/var/",
-            "/bin/",
-            "/sbin/",
-            "/lib/",
-        ]
-
-        # 检查重定向目标路径（简单匹配 > path 或 >> path）
-        import re as _re
-
-        redirect_match = _re.search(r">\s*([/\w.-]+)", command)
-        if redirect_match:
-            redirect_target = redirect_match.group(1)
-            for dangerous_path in dangerous_write_paths:
-                if redirect_target.startswith(dangerous_path):
-                    return f"Dangerous file path detected: '{dangerous_path}'"
-
-        # 检查其他特别危险的模式
-        dangerous_for_echo = ["&&", "||", ";", "`", "&", "\\n", "\\r", "${"]
-        for pattern in dangerous_for_echo:
-            if pattern in command:
-                return f"Dangerous pattern detected: '{pattern}'"
-
-        # 允许 $() 和 > >> 在 echo 中使用（写入当前目录的文件）
         return None
 
     # 其他命令：正常检查所有危险模式
@@ -142,6 +108,51 @@ def check_dangerous_patterns(command: str) -> Optional[str]:
             if pattern == "|":
                 continue
             return f"Dangerous pattern detected: '{pattern}'"
+    return None
+
+
+def _check_echo_safety(command: str) -> Optional[str]:
+    """echo 命令专属安全校验
+
+    echo 允许 $() 和重定向（用于生成配置文件），
+    但禁止写入系统关键目录和链式命令。
+
+    Args:
+        command: echo 命令字符串
+
+    Returns:
+        拒绝原因字符串，安全则返回 None
+    """
+    import re as _re
+
+    # 检查重定向目标路径
+    dangerous_write_paths = [
+        "/etc/",
+        "/sys/",
+        "/proc/",
+        "/dev/",
+        "/root/",
+        "/boot/",
+        "/usr/",
+        "/var/",
+        "/bin/",
+        "/sbin/",
+        "/lib/",
+    ]
+
+    redirect_match = _re.search(r">\s*([/\w.-]+)", command)
+    if redirect_match:
+        redirect_target = redirect_match.group(1)
+        for dangerous_path in dangerous_write_paths:
+            if redirect_target.startswith(dangerous_path):
+                return f"Dangerous file path detected: '{dangerous_path}'"
+
+    # 检查危险的链式命令模式
+    dangerous_for_echo = ["&&", "||", ";", "`", "&", "\\n", "\\r", "${"]
+    for pattern in dangerous_for_echo:
+        if pattern in command:
+            return f"Dangerous pattern detected: '{pattern}'"
+
     return None
 
 
@@ -268,7 +279,18 @@ def check_command_safety(command: str) -> CommandCheckResult:
             matched_rule=rule,
         )
 
-    # 7. 通过检查
+    # 7. echo 命令额外校验（重定向目标 + 链式命令）
+    if base_command == "echo":
+        echo_reason = _check_echo_safety(command)
+        if echo_reason:
+            return CommandCheckResult(
+                allowed=False,
+                risk_level="high",
+                reason=echo_reason,
+                matched_rule=rule,
+            )
+
+    # 8. 通过检查
     return CommandCheckResult(
         allowed=True,
         risk_level=rule.risk_level,
@@ -280,12 +302,9 @@ def check_command_safety(command: str) -> CommandCheckResult:
 def get_command_risk_level(command: str) -> RiskLevel:
     """获取命令的风险等级
 
-    如果白名单未匹配，会调用规则引擎进行分析。
+    通过 PolicyEngine 统一处理白名单 + 规则引擎。
     """
-    result = check_command_safety(command)
-    if result.allowed is None:
-        # 白名单未匹配，调用规则引擎
-        from src.orchestrator.risk_analyzer import analyze_command_risk
+    from src.orchestrator.policy_engine import PolicyEngine
 
-        result = analyze_command_risk(command)
+    result = PolicyEngine.check_command(command)
     return result.risk_level if result.risk_level is not None else "medium"

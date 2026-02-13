@@ -9,7 +9,7 @@ from typing import Optional
 from openai import AsyncOpenAI
 
 from src.config.manager import LLMConfig
-from src.types import ConversationEntry
+from src.types import ConversationEntry, get_raw_output, is_output_truncated
 
 
 class LLMClient:
@@ -65,12 +65,11 @@ class LLMClient:
                     messages.append({"role": "user", "content": entry.user_input})
                 # 助手回复（使用 worker 执行结果）
                 assistant_content = entry.result.message
-                if entry.result.data and isinstance(entry.result.data, dict):
-                    raw_output = entry.result.data.get("raw_output")
-                    truncated = bool(entry.result.data.get("truncated", False))
-                    if isinstance(raw_output, str) and raw_output:
-                        note = " [OUTPUT TRUNCATED]" if truncated else ""
-                        assistant_content += f"\n\nRaw Output{note}:\n{raw_output}"
+                raw_output = get_raw_output(entry.result)
+                if raw_output:
+                    truncated = is_output_truncated(entry.result)
+                    note = " [OUTPUT TRUNCATED]" if truncated else ""
+                    assistant_content += f"\n\nRaw Output{note}:\n{raw_output}"
                 messages.append({"role": "assistant", "content": assistant_content})
 
         # 当前用户输入

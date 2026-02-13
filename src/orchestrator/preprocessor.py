@@ -11,6 +11,7 @@ from src.types import (
     PreprocessConfidence,
     PreprocessedRequest,
     PreprocessIntent,
+    get_raw_output,
 )
 
 # 意图检测模式
@@ -297,11 +298,8 @@ class RequestPreprocessor:
         # 从最近的历史记录开始查找
         for entry in reversed(history):
             result = entry.result
-            if not result.data or not isinstance(result.data, dict):
-                continue
-
-            raw_output = result.data.get("raw_output")
-            if not raw_output or not isinstance(raw_output, str):
+            raw_output = get_raw_output(result)
+            if not raw_output:
                 continue
 
             # 根据类型尝试解析

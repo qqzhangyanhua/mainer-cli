@@ -427,6 +427,14 @@ DANGEROUS_PATTERNS: list[str] = [
     "~",  # 主目录展开
 ]
 
+# 以 exit code 1 表示"无匹配/条件不满足"的命令（非错误）
+# grep/egrep/fgrep: 无匹配行时返回 1
+# diff: 文件有差异时返回 1
+# test/[: 条件不成立时返回 1
+EXIT1_OK_COMMANDS: frozenset[str] = frozenset({
+    "grep", "egrep", "fgrep", "diff", "test", "[",
+})
+
 # 允许的管道命令（文本处理工具 + 常用管道目标）
 ALLOWED_PIPE_COMMANDS: set[str] = {
     "grep",

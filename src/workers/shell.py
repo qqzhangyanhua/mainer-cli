@@ -3,25 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import re
 from typing import Tuple, Union, cast
 
-from src.orchestrator.command_whitelist import CommandCheckResult, check_command_safety
-from src.orchestrator.risk_analyzer import analyze_command_risk
+from src.orchestrator.policy_engine import PolicyEngine
+from src.orchestrator.whitelist_rules import EXIT1_OK_COMMANDS
 from src.types import ArgValue, WorkerResult
 from src.workers.base import BaseWorker
+from src.workers.path_utils import normalize_path
 
 # 输出截断常量
 MAX_OUTPUT_LENGTH = 4000
 TRUNCATE_HEAD = 2000
 TRUNCATE_TAIL = 2000
-
-# 以 exit code 1 表示"无匹配/条件不满足"的命令（非错误）
-# grep/egrep/fgrep: 无匹配行时返回 1
-# diff: 文件有差异时返回 1
-# test/[: 条件不成立时返回 1
-_EXIT1_OK_COMMANDS = re.compile(r"^(grep|egrep|fgrep|diff|test|\[)$")
 
 
 class ShellWorker(BaseWorker):
@@ -61,7 +54,7 @@ class ShellWorker(BaseWorker):
                 continue  # 跳过 VAR=value 形式
             cmd = part.split("/")[-1]  # 取 basename
             break
-        return bool(_EXIT1_OK_COMMANDS.match(cmd))
+        return cmd in EXIT1_OK_COMMANDS
 
     def _truncate_output(self, output: str) -> Tuple[str, bool]:
         """截断过长输出，保留头尾部分
@@ -105,31 +98,22 @@ class ShellWorker(BaseWorker):
                 message="command must be a string",
             )
 
-        working_dir = args.get("working_dir", os.getcwd())
-        if not isinstance(working_dir, str):
+        working_dir = args.get("working_dir")
+        if working_dir is not None and not isinstance(working_dir, str):
             return WorkerResult(
                 success=False,
                 message="working_dir must be a string",
             )
+        working_dir = normalize_path(working_dir if isinstance(working_dir, str) else None)
 
-        # 白名单安全检查 + 规则引擎兜底
-        check_result = check_command_safety(command)
-        if check_result.allowed is False:
-            # 白名单明确拒绝（黑名单/危险模式/禁止标志）
+        # 统一安全检查（白名单 + 规则引擎一步完成）
+        check_result = PolicyEngine.check_command(command)
+        if not check_result.allowed:
             return WorkerResult(
                 success=False,
                 message=f"Command blocked: {check_result.reason}",
                 data={"blocked": True, "command": command, "reason": check_result.reason},
             )
-        elif check_result.allowed is None:
-            # 白名单未匹配 → 规则引擎接管
-            check_result = analyze_command_risk(command)
-            if not check_result.allowed:
-                return WorkerResult(
-                    success=False,
-                    message=f"Command blocked by risk analyzer: {check_result.reason}",
-                    data={"blocked": True, "command": command, "reason": check_result.reason},
-                )
 
         if dry_run:
             risk_info = f" [risk: {check_result.risk_level}]"
