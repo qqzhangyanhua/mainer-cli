@@ -88,6 +88,14 @@ class OrchestratorEngine:
         except ImportError:
             pass
 
+        # 注册 ComposeWorker
+        try:
+            from src.workers.compose import ComposeWorker
+
+            self._workers["compose"] = ComposeWorker()
+        except ImportError:
+            pass
+
         # 注册 AnalyzeWorker（需要 LLM 客户端）
         try:
             from src.workers.analyze import AnalyzeWorker
@@ -131,6 +139,14 @@ class OrchestratorEngine:
                 "disk": (mon_cfg.disk_warning, mon_cfg.disk_critical),
             }
             self._workers["monitor"] = MonitorWorker(thresholds=thresholds)
+        except ImportError:
+            pass
+
+        # 注册 KubernetesWorker
+        try:
+            from src.workers.kubernetes import KubernetesWorker
+
+            self._workers["kubernetes"] = KubernetesWorker()
         except ImportError:
             pass
 

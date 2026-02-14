@@ -45,6 +45,8 @@ class PromptBuilder:
         "monitor": ["snapshot", "check_port", "check_http", "check_process", "top_processes"],
         "log_analyzer": ["analyze_lines", "analyze_file", "analyze_container"],
         "remote": ["execute", "list_hosts", "test_connection"],
+        "compose": ["status", "health", "logs", "restart", "up", "down"],
+        "kubernetes": ["get", "describe", "logs", "top", "rollout", "scale"],
     }
 
     def get_worker_capabilities(
@@ -188,6 +190,36 @@ Worker Details:
   - args: {{"host": "主机地址或标签"}}
   - risk_level: safe
   - 示例: {{"worker": "remote", "action": "test_connection", "args": {{"host": "192.168.1.100"}}, "risk_level": "safe"}}
+
+- compose.status: 列出 compose 项目所有服务及状态
+  - args: {{}} 可选 {{"project": "项目名", "file": "docker-compose.yml路径"}}
+  - risk_level: safe
+  - 示例: {{"worker": "compose", "action": "status", "args": {{}}, "risk_level": "safe"}}
+
+- compose.health: 批量健康检查 compose 所有服务
+  - args: {{}} 可选 {{"project": "项目名"}}
+  - risk_level: safe
+  - 示例: {{"worker": "compose", "action": "health", "args": {{}}, "risk_level": "safe"}}
+
+- compose.logs: 获取 compose 服务日志（支持单服务或全部）
+  - args: {{}} 可选 {{"service": "服务名", "tail": 100}}
+  - risk_level: safe
+  - 示例: {{"worker": "compose", "action": "logs", "args": {{"service": "web", "tail": 200}}, "risk_level": "safe"}}
+
+- compose.restart: 重启 compose 服务
+  - args: {{}} 可选 {{"service": "服务名"}}，不指定则重启所有
+  - risk_level: medium
+  - 示例: {{"worker": "compose", "action": "restart", "args": {{"service": "web"}}, "risk_level": "medium"}}
+
+- compose.up: 启动 compose 项目
+  - args: {{}} 可选 {{"file": "docker-compose.yml"}}
+  - risk_level: medium
+  - 示例: {{"worker": "compose", "action": "up", "args": {{}}, "risk_level": "medium"}}
+
+- compose.down: 停止并移除 compose 项目
+  - args: {{}}
+  - risk_level: high
+  - 示例: {{"worker": "compose", "action": "down", "args": {{}}, "risk_level": "high"}}
 
 - system.delete_files: Delete one or more files
   - args: {{"files": ["path1", "path2", ...]}}
