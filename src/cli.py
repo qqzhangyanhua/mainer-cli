@@ -25,9 +25,11 @@ app = typer.Typer(
 config_app = typer.Typer(help="配置管理命令")
 template_app = typer.Typer(help="任务模板管理命令")
 cache_app = typer.Typer(help="缓存管理命令")
+host_app = typer.Typer(help="远程主机管理命令")
 app.add_typer(config_app, name="config")
 app.add_typer(template_app, name="template")
 app.add_typer(cache_app, name="cache")
+app.add_typer(host_app, name="host")
 
 console = Console()
 
@@ -460,6 +462,137 @@ def cache_clear(
         console.print(f"[green]✓[/green] Cleared cache for: {target_type}")
     else:
         console.print(f"[green]✓[/green] Cleared all cache ({count} items)")
+
+
+@host_app.command("list")
+def host_list() -> None:
+    """列出所有已配置的远程主机"""
+    from rich.table import Table
+
+    from src.types import HostConfig
+
+    config_manager = ConfigManager()
+    config = config_manager.load()
+
+    hosts = config.remote.hosts
+    if not hosts:
+        console.print("[dim]No remote hosts configured[/dim]")
+        console.print("[dim]Use 'opsai host add' to add a host[/dim]")
+        return
+
+    table = Table(title="Remote Hosts")
+    table.add_column("Address", style="cyan")
+    table.add_column("Port", style="magenta", justify="right")
+    table.add_column("User", style="green")
+    table.add_column("Key", style="yellow")
+    table.add_column("Labels", style="blue")
+
+    for host in hosts:
+        key_display = host.key_path or config.remote.default_key_path or "(default)"
+        table.add_row(
+            host.address,
+            str(host.port),
+            host.user,
+            key_display,
+            ", ".join(host.labels) if host.labels else "",
+        )
+
+    console.print(table)
+
+
+@host_app.command("add")
+def host_add(
+    address: str = typer.Argument(..., help="主机地址（IP 或域名）"),
+    port: int = typer.Option(22, "--port", "-p", help="SSH 端口"),
+    user: str = typer.Option("root", "--user", "-u", help="SSH 用户名"),
+    key_path: Optional[str] = typer.Option(None, "--key", "-k", help="SSH 私钥路径"),
+    labels: Optional[str] = typer.Option(None, "--labels", "-l", help="标签（逗号分隔）"),
+) -> None:
+    """添加远程主机
+
+    示例:
+        opsai host add 192.168.1.100
+        opsai host add 10.0.0.5 -u deploy -p 2222 -k ~/.ssh/id_rsa
+        opsai host add web-server -l "web,production"
+    """
+    from src.types import HostConfig
+
+    config_manager = ConfigManager()
+    config = config_manager.load()
+
+    # 检查重复
+    for existing in config.remote.hosts:
+        if existing.address == address:
+            console.print(f"[yellow]Host already exists: {address}[/yellow]")
+            raise typer.Exit(1)
+
+    label_list = [l.strip() for l in labels.split(",") if l.strip()] if labels else []
+
+    host = HostConfig(
+        address=address,
+        port=port,
+        user=user,
+        key_path=key_path,
+        labels=label_list,
+    )
+    config.remote.hosts.append(host)
+    config_manager.save(config)
+    console.print(f"[green]✓[/green] Host added: {user}@{address}:{port}")
+
+
+@host_app.command("remove")
+def host_remove(
+    address: str = typer.Argument(..., help="要移除的主机地址"),
+) -> None:
+    """移除远程主机
+
+    示例:
+        opsai host remove 192.168.1.100
+    """
+    config_manager = ConfigManager()
+    config = config_manager.load()
+
+    original_count = len(config.remote.hosts)
+    config.remote.hosts = [h for h in config.remote.hosts if h.address != address]
+
+    if len(config.remote.hosts) == original_count:
+        console.print(f"[yellow]Host not found: {address}[/yellow]")
+        raise typer.Exit(1)
+
+    config_manager.save(config)
+    console.print(f"[green]✓[/green] Host removed: {address}")
+
+
+@host_app.command("test")
+def host_test(
+    address: str = typer.Argument(..., help="要测试的主机地址"),
+) -> None:
+    """测试与远程主机的 SSH 连接
+
+    示例:
+        opsai host test 192.168.1.100
+    """
+    config_manager = ConfigManager()
+    config = config_manager.load()
+
+    if not config.remote.hosts:
+        console.print("[red]No remote hosts configured[/red]")
+        raise typer.Exit(1)
+
+    try:
+        from src.workers.remote import RemoteWorker
+    except ImportError:
+        console.print("[red]asyncssh not installed. Run: uv pip install asyncssh[/red]")
+        raise typer.Exit(1)
+
+    worker = RemoteWorker(config=config.remote)
+    result = asyncio.run(worker.execute("test_connection", {"host": address}))
+
+    if result.success:
+        console.print(f"[green]✓[/green] {result.message}")
+    else:
+        console.print(f"[red]✗[/red] {result.message}")
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

@@ -31,8 +31,12 @@ dev = [
 clipboard = [
     "pyperclip>=1.11.0",
 ]
+remote = [
+    "asyncssh>=2.14.0",
+]
 all = [
     "pyperclip>=1.11.0",
+    "asyncssh>=2.14.0",
 ]
 
 [build-system]

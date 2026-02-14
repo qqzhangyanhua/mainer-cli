@@ -88,6 +88,7 @@ class PolicyEngine:
 
         对 Shell 命令使用 check_command 统一检查，
         对其他 Worker 使用模式匹配。
+        远程执行命令最低为 medium 风险。
 
         Args:
             instruction: 待检查的指令
@@ -106,6 +107,22 @@ class PolicyEngine:
                     allowed=cmd_result.allowed is not False,
                     reason=cmd_result.reason,
                 )
+
+        # 远程执行命令：最低 medium 风险
+        if instruction.worker == "remote" and instruction.action == "execute":
+            command = instruction.args.get("command", "")
+            command_text = _instruction_to_text(instruction)
+            risk: RiskLevel = "medium"
+            reason = "Remote execution: minimum medium risk"
+
+            # 检查是否包含高危模式
+            for pattern in DANGER_PATTERNS.get("high", []):
+                if pattern in command_text:
+                    risk = "high"
+                    reason = f"Remote high-risk pattern: '{pattern}'"
+                    break
+
+            return PolicyResult(risk_level=risk, allowed=True, reason=reason)
 
         # 其他 Worker 使用模式匹配
         command_text = _instruction_to_text(instruction)
