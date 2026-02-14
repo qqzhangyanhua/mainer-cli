@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from src.types import ArgValue, Instruction
+
+# 步骤失败时的行为
+OnFailureAction = Literal["abort", "skip", "retry"]
 
 
 class TemplateStep(BaseModel):
@@ -18,6 +21,19 @@ class TemplateStep(BaseModel):
     action: str = Field(..., description="动作名称")
     args: dict[str, ArgValue] = Field(default_factory=dict, description="参数")
     description: str = Field(default="", description="步骤描述")
+
+    # --- Runbook 增强字段（均可选，向后兼容）---
+    output_key: Optional[str] = Field(
+        default=None, description="存储结果的键名，供后续步骤引用"
+    )
+    condition: Optional[str] = Field(
+        default=None,
+        description="执行条件表达式，如 'step1.success' 或 'step1.success == false'",
+    )
+    on_failure: OnFailureAction = Field(
+        default="abort", description="失败时行为: abort/skip/retry"
+    )
+    retry_count: int = Field(default=0, description="失败重试次数（0=不重试）")
 
 
 class TaskTemplate(BaseModel):
