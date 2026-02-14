@@ -146,6 +146,104 @@ def is_output_truncated(result: WorkerResult) -> bool:
     return False
 
 
+# 日志级别类型
+LogLevel = Literal["ERROR", "WARN", "INFO", "DEBUG", "TRACE", "FATAL", "UNKNOWN"]
+
+
+class LogEntry(BaseModel):
+    """解析后的单条日志"""
+
+    raw: str = Field(..., description="原始日志行")
+    timestamp: Optional[str] = Field(default=None, description="时间戳（原始字符串）")
+    level: LogLevel = Field(default="UNKNOWN", description="日志级别")
+    message: str = Field(default="", description="日志消息体")
+    source: Optional[str] = Field(default=None, description="日志来源（文件路径/容器名）")
+
+
+class LogPatternCount(BaseModel):
+    """日志模式聚合计数"""
+
+    pattern: str = Field(..., description="日志消息模板（去数字/ID 后）")
+    count: int = Field(..., description="出现次数")
+    sample: str = Field(..., description="一条原始示例")
+    level: LogLevel = Field(default="UNKNOWN", description="日志级别")
+
+
+class LogTrendPoint(BaseModel):
+    """日志趋势时间点"""
+
+    window: str = Field(..., description="时间窗口标签，如 '09:00-09:05'")
+    total: int = Field(default=0, description="该窗口内总日志数")
+    errors: int = Field(default=0, description="该窗口内错误数")
+    warns: int = Field(default=0, description="该窗口内警告数")
+
+
+class LogAnalysis(BaseModel):
+    """日志分析结果"""
+
+    total_lines: int = Field(default=0, description="总日志行数")
+    level_counts: dict[str, int] = Field(default_factory=dict, description="按级别计数")
+    top_errors: list[LogPatternCount] = Field(default_factory=list, description="最频繁的错误模式")
+    top_warns: list[LogPatternCount] = Field(default_factory=list, description="最频繁的警告模式")
+    trend: list[LogTrendPoint] = Field(default_factory=list, description="时间趋势")
+    dedup_count: int = Field(default=0, description="去重后的独立模式数")
+    source: str = Field(default="", description="日志来源描述")
+
+
+# 告警规则类型
+AlertSeverity = Literal["warning", "critical"]
+
+
+class AlertRule(BaseModel):
+    """告警规则"""
+
+    name: str = Field(..., description="规则名称")
+    metric_name: str = Field(..., description="匹配的指标名（支持前缀匹配）")
+    condition: Literal["gt", "lt"] = Field(default="gt", description="条件：大于/小于")
+    threshold: float = Field(..., description="阈值")
+    duration: int = Field(default=1, description="连续触发 N 次才告警（防抖）")
+    cooldown: int = Field(default=300, description="告警后冷却时间（秒）")
+    severity: AlertSeverity = Field(default="warning", description="告警严重级别")
+
+
+class AlertEvent(BaseModel):
+    """告警事件"""
+
+    rule_name: str = Field(..., description="触发的规则名称")
+    metric_name: str = Field(..., description="触发的指标名")
+    current_value: float = Field(..., description="当前值")
+    threshold: float = Field(..., description="阈值")
+    severity: AlertSeverity = Field(..., description="严重级别")
+    message: str = Field(..., description="告警消息")
+    recovered: bool = Field(default=False, description="是否为恢复通知")
+
+
+# 通知渠道类型
+NotificationChannelType = Literal["webhook", "desktop"]
+
+
+class NotificationChannel(BaseModel):
+    """通知渠道配置"""
+
+    type: NotificationChannelType = Field(..., description="渠道类型")
+    url: Optional[str] = Field(default=None, description="Webhook URL")
+    events: list[AlertSeverity] = Field(
+        default_factory=lambda: ["critical"], description="订阅的事件级别"
+    )
+    headers: Optional[dict[str, str]] = Field(default=None, description="自定义 HTTP 头")
+
+
+# SSH 远程主机配置
+class HostConfig(BaseModel):
+    """远程主机配置"""
+
+    address: str = Field(..., description="主机地址（IP 或域名）")
+    port: int = Field(default=22, description="SSH 端口")
+    user: str = Field(default="root", description="SSH 用户名")
+    key_path: Optional[str] = Field(default=None, description="SSH 私钥路径")
+    labels: list[str] = Field(default_factory=list, description="标签（用于批量操作筛选）")
+
+
 @runtime_checkable
 class HistoryWritable(Protocol):
     """可写历史视图的协议，兼容 RichLog 和 HistoryWriter"""

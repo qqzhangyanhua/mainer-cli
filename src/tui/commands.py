@@ -60,6 +60,7 @@ def show_help(history: HistoryWritable) -> None:
     history.write("/status   - 状态栏开关（/status on|off|toggle）")
     history.write("/copy     - 复制输出（/copy all|N|mode）")
     history.write("/monitor  - 系统资源快照（CPU/内存/磁盘/负载）")
+    history.write("/logs     - 日志分析（/logs <容器名> 或 /logs file <路径>）")
     history.write("/exit     - 退出")
     history.write("[dim]快捷键：Ctrl+C 退出，Ctrl+L 清空对话，Ctrl+Y 复制模式[/dim]")
 
@@ -357,3 +358,119 @@ def show_monitor_snapshot(history: HistoryWritable) -> None:
 
     history.write(table)
     history.write(f"[dim]{result.message}[/dim]")
+
+
+def show_log_analysis(
+    args: list[str],
+    history: HistoryWritable,
+) -> None:
+    """执行日志分析并展示结果
+
+    用法:
+      /logs <container>           分析容器日志
+      /logs file <path>           分析日志文件
+      /logs <container> --tail N  指定日志行数
+    """
+    import asyncio
+    import concurrent.futures
+
+    from rich.table import Table
+
+    from src.workers.log_analyzer import LogAnalyzerWorker
+
+    if not args:
+        history.write("[yellow]用法: /logs <容器名> 或 /logs file <路径>[/yellow]")
+        history.write("[dim]  /logs nginx              分析 nginx 容器日志[/dim]")
+        history.write("[dim]  /logs nginx --tail 1000  最近 1000 行[/dim]")
+        history.write("[dim]  /logs file /var/log/syslog  分析日志文件[/dim]")
+        return
+
+    worker = LogAnalyzerWorker()
+
+    # 解析参数
+    action = "analyze_container"
+    worker_args: dict[str, str | int] = {}
+    tail_n = 500
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "file" and i + 1 < len(args):
+            action = "analyze_file"
+            worker_args["path"] = args[i + 1]
+            i += 2
+            continue
+        if arg == "--tail" and i + 1 < len(args):
+            try:
+                tail_n = int(args[i + 1])
+            except ValueError:
+                pass
+            i += 2
+            continue
+        if "container" not in worker_args and action == "analyze_container":
+            worker_args["container"] = arg
+        i += 1
+
+    worker_args["tail"] = tail_n
+
+    try:
+        result = asyncio.get_event_loop().run_until_complete(
+            worker.execute(action, worker_args)  # type: ignore[arg-type]
+        )
+    except RuntimeError:
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            result = pool.submit(
+                asyncio.run, worker.execute(action, worker_args)  # type: ignore[arg-type]
+            ).result()
+
+    if not result.success:
+        history.write(f"[red]日志分析失败: {result.message}[/red]")
+        return
+
+    # 展示结果
+    history.write(f"[bold green]{result.message.split(chr(10))[0]}[/bold green]")
+
+    if isinstance(result.data, list) and result.data:
+        # 级别分布表
+        level_rows = [r for r in result.data if isinstance(r, dict) and str(r.get("name", "")).startswith("level_")]
+        if level_rows:
+            level_table = Table(title="级别分布", expand=False)
+            level_table.add_column("级别", style="cyan")
+            level_table.add_column("数量", justify="right")
+
+            level_style_map: dict[str, str] = {
+                "FATAL": "red bold",
+                "ERROR": "red",
+                "WARN": "yellow",
+                "INFO": "green",
+                "DEBUG": "dim",
+            }
+
+            for row in level_rows:
+                level_name = str(row.get("name", ""))[6:]  # strip "level_"
+                count = str(row.get("count", 0))
+                style = level_style_map.get(level_name, "white")
+                level_table.add_row(f"[{style}]{level_name}[/{style}]", count)
+
+            history.write(level_table)
+
+        # 错误模式表
+        error_rows = [r for r in result.data if isinstance(r, dict) and str(r.get("name", "")).startswith("error_")]
+        if error_rows:
+            error_table = Table(title="Top 错误模式", expand=True)
+            error_table.add_column("#", style="dim", width=3)
+            error_table.add_column("次数", justify="right", style="red", width=6)
+            error_table.add_column("模式")
+
+            for idx, row in enumerate(error_rows[:10], 1):
+                error_table.add_row(
+                    str(idx),
+                    str(row.get("count", 0)),
+                    str(row.get("pattern", ""))[:80],
+                )
+            history.write(error_table)
+
+    # 显示详细摘要
+    for line in result.message.split("\n")[1:]:
+        if line.strip():
+            history.write(f"[dim]{line}[/dim]")

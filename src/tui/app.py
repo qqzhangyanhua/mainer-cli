@@ -43,6 +43,7 @@ from src.tui.commands import (
     show_config,
     show_help,
     show_history_summary,
+    show_log_analysis,
 )
 from src.tui.screens import ConfirmationScreen, UserChoiceScreen
 from src.tui.widgets import (
@@ -269,6 +270,8 @@ class OpsAIApp(App[str]):
         self._loading_text: str = "思考中..."
         self._plain_text_buffer: list[str] = []
         self._copy_mode: bool = False
+        self._watch_timer: Timer | None = None
+        self._watch_alert_manager: object | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -634,15 +637,151 @@ class OpsAIApp(App[str]):
             self._handle_copy_command(parts[1:] if len(parts) > 1 else [])
             return True
         if command == "monitor":
-            from src.tui.commands import show_monitor_snapshot
+            sub_args = parts[1:] if len(parts) > 1 else []
+            if sub_args and sub_args[0] == "watch":
+                self._toggle_watch_mode(sub_args[1:])
+            else:
+                from src.tui.commands import show_monitor_snapshot
 
-            show_monitor_snapshot(writer)
+                show_monitor_snapshot(writer)
+            return True
+        if command in {"logs", "log"}:
+            show_log_analysis(
+                parts[1:] if len(parts) > 1 else [],
+                writer,
+            )
             return True
 
         return False
 
     def action_clear(self) -> None:
         self._clear_conversation()
+
+    # ── Watch 模式（持续监控 + 告警）──────────────────────────
+
+    def _toggle_watch_mode(self, args: list[str]) -> None:
+        writer = self._get_writer()
+
+        if self._watch_timer is not None:
+            # 已在 watch 模式，停止
+            self._watch_timer.stop()
+            self._watch_timer = None
+            self._watch_alert_manager = None
+            writer.write("[yellow]Watch 模式已停止[/yellow]")
+            return
+
+        # 解析间隔
+        interval = self._config.notifications.watch_interval
+        for i, arg in enumerate(args):
+            if arg == "--interval" and i + 1 < len(args):
+                try:
+                    interval = int(args[i + 1])
+                except ValueError:
+                    pass
+
+        # 初始化告警管理器
+        from src.workers.notifier import AlertManager
+
+        self._watch_alert_manager = AlertManager(
+            duration=self._config.notifications.alert_duration,
+            cooldown=self._config.notifications.alert_cooldown,
+        )
+
+        # 启动定时器
+        self._watch_timer = self.set_interval(
+            interval, self._watch_tick, name="watch_timer"
+        )
+        writer.write(
+            f"[green]Watch 模式已启动[/green] (间隔: {interval}s, "
+            f"输入 /monitor watch 停止)"
+        )
+        # 立即执行一次
+        self.call_later(self._watch_tick)
+
+    async def _watch_tick(self) -> None:
+        """watch 定时回调：采集指标 + 检查告警"""
+        import time
+
+        from src.workers.monitor import MonitorWorker
+        from src.workers.notifier import AlertManager
+
+        writer = self._get_writer()
+
+        # 获取 MonitorWorker（优先用 engine 中的，否则创建临时实例）
+        monitor = self._engine.get_worker("monitor")
+        if monitor is None:
+            monitor = MonitorWorker()
+
+        result = await monitor.execute("snapshot", {})
+        if not result.success or not isinstance(result.data, list):
+            return
+
+        # 更新状态栏
+        worst = "ok"
+        for item in result.data:
+            if isinstance(item, dict):
+                status = str(item.get("status", "ok"))
+                if status == "critical":
+                    worst = "critical"
+                elif status == "warning" and worst != "critical":
+                    worst = "warning"
+
+        status_icon = {"ok": "[green]OK[/green]", "warning": "[yellow]WARN[/yellow]",
+                       "critical": "[red]CRIT[/red]"}.get(worst, "")
+        self._status_message = f"Watch: {status_icon}"
+        self._update_status_bar()
+
+        # 告警检查
+        if not isinstance(self._watch_alert_manager, AlertManager):
+            return
+
+        alert_mgr: AlertManager = self._watch_alert_manager
+        mon_cfg = self._config.monitor
+        now = time.monotonic()
+
+        thresholds: dict[str, tuple[float, float]] = {
+            "cpu_usage": (mon_cfg.cpu_warning, mon_cfg.cpu_critical),
+            "memory_usage": (mon_cfg.memory_warning, mon_cfg.memory_critical),
+        }
+        # 磁盘分区动态阈值
+        for item in result.data:
+            if isinstance(item, dict):
+                name = str(item.get("name", ""))
+                if name.startswith("disk_"):
+                    thresholds[name] = (mon_cfg.disk_warning, mon_cfg.disk_critical)
+
+        for item in result.data:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", ""))
+            if name not in thresholds:
+                continue
+            try:
+                value = float(item.get("value", 0))
+            except (ValueError, TypeError):
+                continue
+
+            warn_th, crit_th = thresholds[name]
+            event = alert_mgr.check_metric(name, value, warn_th, crit_th, now)
+
+            if event is not None:
+                # 在 TUI 显示告警
+                if event.recovered:
+                    writer.write(f"[green][RECOVERED] {event.message}[/green]")
+                elif event.severity == "critical":
+                    writer.write(f"[red bold][CRITICAL] {event.message}[/red bold]")
+                else:
+                    writer.write(f"[yellow][WARNING] {event.message}[/yellow]")
+
+                # 发送到通知渠道
+                notifier = self._engine.get_worker("notifier")
+                if notifier is not None:
+                    await notifier.execute("send", {
+                        "message": event.message,
+                        "severity": event.severity,
+                        "title": f"OpsAI: {name}",
+                        "recovered": event.recovered,
+                    })
 
     def action_toggle_copy_mode(self) -> None:
         if self._copy_mode:
@@ -873,6 +1012,7 @@ class OpsAIApp(App[str]):
             ("/status", f"状态栏开关（当前: {status_state}）", ""),
             ("/copy", "复制输出（/copy all|N|mode）", ""),
             ("/monitor", "系统资源快照（CPU/内存/磁盘/负载）", ""),
+            ("/logs", "日志分析（/logs <容器名> 或 /logs file <路径>）", ""),
             ("/exit", "退出", ""),
         ]
 
