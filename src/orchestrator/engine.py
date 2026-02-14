@@ -112,6 +112,14 @@ class OrchestratorEngine:
         except ImportError:
             pass
 
+        # 注册 LogAnalyzerWorker
+        try:
+            from src.workers.log_analyzer import LogAnalyzerWorker
+
+            self._workers["log_analyzer"] = LogAnalyzerWorker()
+        except ImportError:
+            pass
+
         # 注册 MonitorWorker
         try:
             from src.workers.monitor import MonitorWorker
@@ -125,6 +133,28 @@ class OrchestratorEngine:
             self._workers["monitor"] = MonitorWorker(thresholds=thresholds)
         except ImportError:
             pass
+
+        # 注册 NotifierWorker
+        if self._config.notifications.enabled and self._config.notifications.channels:
+            try:
+                from src.workers.notifier import NotifierWorker
+
+                self._workers["notifier"] = NotifierWorker(
+                    channels=self._config.notifications.channels,
+                )
+            except ImportError:
+                pass
+
+        # 注册 RemoteWorker
+        if self._config.remote.hosts:
+            try:
+                from src.workers.remote import RemoteWorker
+
+                self._workers["remote"] = RemoteWorker(
+                    config=self._config.remote,
+                )
+            except ImportError:
+                pass
 
         # 注册 DeployWorker（需要 HttpWorker、ShellWorker 和 LLMClient）
         http_worker = self._workers.get("http")

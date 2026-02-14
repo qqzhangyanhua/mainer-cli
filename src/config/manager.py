@@ -8,7 +8,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
-from src.types import RiskLevel
+from src.types import AlertSeverity, HostConfig, NotificationChannel, RiskLevel
 
 
 class LLMConfig(BaseModel):
@@ -68,6 +68,29 @@ class MonitorConfig(BaseModel):
     disk_critical: float = Field(default=95.0, description="磁盘严重阈值(%)")
 
 
+class NotificationConfig(BaseModel):
+    """通知配置"""
+
+    enabled: bool = Field(default=False, description="是否启用通知")
+    channels: list[NotificationChannel] = Field(
+        default_factory=list, description="通知渠道列表"
+    )
+    watch_interval: int = Field(default=30, description="watch 模式采集间隔（秒）")
+    alert_duration: int = Field(default=3, description="连续触发 N 次才告警（防抖）")
+    alert_cooldown: int = Field(default=300, description="告警后冷却时间（秒）")
+
+
+class RemoteConfig(BaseModel):
+    """远程主机配置"""
+
+    hosts: list[HostConfig] = Field(default_factory=list, description="远程主机列表")
+    default_key_path: Optional[str] = Field(
+        default=None, description="默认 SSH 私钥路径"
+    )
+    connect_timeout: int = Field(default=10, description="SSH 连接超时（秒）")
+    command_timeout: int = Field(default=30, description="远程命令执行超时（秒）")
+
+
 class OpsAIConfig(BaseModel):
     """OpsAI 完整配置"""
 
@@ -77,6 +100,8 @@ class OpsAIConfig(BaseModel):
     http: HttpConfig = Field(default_factory=HttpConfig)
     tui: TUIConfig = Field(default_factory=TUIConfig)
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
+    notifications: NotificationConfig = Field(default_factory=NotificationConfig)
+    remote: RemoteConfig = Field(default_factory=RemoteConfig)
 
 
 class ConfigManager:

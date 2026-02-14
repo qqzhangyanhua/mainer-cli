@@ -43,6 +43,8 @@ class PromptBuilder:
         "deploy": ["deploy"],  # 简化：只暴露一键部署
         "git": ["clone", "pull", "status"],  # Git 操作（显式路径优先）
         "monitor": ["snapshot", "check_port", "check_http", "check_process", "top_processes"],
+        "log_analyzer": ["analyze_lines", "analyze_file", "analyze_container"],
+        "remote": ["execute", "list_hosts", "test_connection"],
     }
 
     def get_worker_capabilities(
@@ -156,6 +158,36 @@ Worker Details:
   - args: {{"sort_by": "cpu"}} 或 {{"sort_by": "memory"}}, 可选 {{"limit": 10}}
   - risk_level: safe
   - 示例: {{"worker": "monitor", "action": "top_processes", "args": {{"sort_by": "cpu", "limit": 10}}, "risk_level": "safe"}}
+
+- log_analyzer.analyze_container: 分析容器日志（本地预处理 + 统计）
+  - args: {{"container": "容器名或ID"}} 可选 {{"tail": 500, "top_n": 10}}
+  - risk_level: safe
+  - 自动完成: 获取日志 → 解析级别 → 统计计数 → 模式聚合 → 趋势检测
+  - 示例: {{"worker": "log_analyzer", "action": "analyze_container", "args": {{"container": "nginx"}}, "risk_level": "safe"}}
+
+- log_analyzer.analyze_file: 分析日志文件
+  - args: {{"path": "/var/log/syslog"}} 可选 {{"tail": 1000, "top_n": 10}}
+  - risk_level: safe
+  - 示例: {{"worker": "log_analyzer", "action": "analyze_file", "args": {{"path": "/var/log/syslog"}}, "risk_level": "safe"}}
+
+- log_analyzer.analyze_lines: 分析原始日志文本
+  - args: {{"lines": "日志文本"}} 可选 {{"source": "描述", "top_n": 10}}
+  - risk_level: safe
+
+- remote.execute: 在远程主机上执行 SSH 命令
+  - args: {{"host": "主机地址或标签", "command": "命令"}}
+  - risk_level: medium（最低）, 破坏性命令自动升为 high
+  - 示例: {{"worker": "remote", "action": "execute", "args": {{"host": "192.168.1.100", "command": "df -h"}}, "risk_level": "medium"}}
+
+- remote.list_hosts: 列出已配置的远程主机
+  - args: {{}}
+  - risk_level: safe
+  - 示例: {{"worker": "remote", "action": "list_hosts", "args": {{}}, "risk_level": "safe"}}
+
+- remote.test_connection: 测试与远程主机的 SSH 连接
+  - args: {{"host": "主机地址或标签"}}
+  - risk_level: safe
+  - 示例: {{"worker": "remote", "action": "test_connection", "args": {{"host": "192.168.1.100"}}, "risk_level": "safe"}}
 
 - system.delete_files: Delete one or more files
   - args: {{"files": ["path1", "path2", ...]}}
