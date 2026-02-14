@@ -77,6 +77,19 @@ DEPLOY_PATTERNS: list[str] = [
     r"start",
 ]
 
+# 监控/系统状态意图模式
+MONITOR_PATTERNS: list[str] = [
+    r"系统状态",
+    r"系统健康",
+    r"系统资源",
+    r"系统概况",
+    r"系统负载",
+    r"system\s*status",
+    r"system\s*health",
+    r"cpu.*内存|内存.*cpu",
+    r"资源使用",
+]
+
 # GitHub/GitLab URL 模式
 REPO_URL_PATTERN = r"https?://(?:github|gitlab)\.com/[\w\-\.]+/[\w\-\.]+"
 
@@ -147,6 +160,18 @@ class RequestPreprocessor:
                 confidence="high",
             )
 
+        # 2.5 监控/系统状态 - 快速路径，引导 LLM 调用 monitor.snapshot
+        if intent == "monitor":
+            return PreprocessedRequest(
+                original_input=user_input,
+                intent=intent,
+                confidence="high",
+                enriched_input=(
+                    "用户想查看系统整体状态。请使用 monitor.snapshot 获取 CPU、内存、磁盘、"
+                    "负载的完整快照，然后用 chat.respond 总结结果。"
+                ),
+            )
+
         # 3. 如果是解释意图，尝试解析目标
         if intent == "explain":
             target, target_type, confidence = self._resolve_target(user_input, history)
@@ -198,7 +223,7 @@ class RequestPreprocessor:
     def _detect_intent(self, text: str) -> PreprocessIntent:
         """检测用户意图
 
-        优先级: deploy > identity > explain > greeting > list > unknown
+        优先级: deploy > identity > monitor > explain > greeting > list > unknown
         """
         text_lower = text.lower()
 
@@ -214,6 +239,11 @@ class RequestPreprocessor:
         for pattern in IDENTITY_PATTERNS:
             if re.search(pattern, text_lower):
                 return "identity"
+
+        # 检查监控/系统状态意图
+        for pattern in MONITOR_PATTERNS:
+            if re.search(pattern, text_lower):
+                return "monitor"
 
         # 检查解释意图
         for pattern in EXPLAIN_PATTERNS:

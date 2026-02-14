@@ -57,6 +57,17 @@ class TUIConfig(BaseModel):
     show_thinking: bool = Field(default=False, description="是否在内容区展示思考过程")
 
 
+class MonitorConfig(BaseModel):
+    """监控阈值配置"""
+
+    cpu_warning: float = Field(default=80.0, description="CPU 告警阈值(%)")
+    cpu_critical: float = Field(default=95.0, description="CPU 严重阈值(%)")
+    memory_warning: float = Field(default=80.0, description="内存告警阈值(%)")
+    memory_critical: float = Field(default=95.0, description="内存严重阈值(%)")
+    disk_warning: float = Field(default=85.0, description="磁盘告警阈值(%)")
+    disk_critical: float = Field(default=95.0, description="磁盘严重阈值(%)")
+
+
 class OpsAIConfig(BaseModel):
     """OpsAI 完整配置"""
 
@@ -65,6 +76,7 @@ class OpsAIConfig(BaseModel):
     audit: AuditConfig = Field(default_factory=AuditConfig)
     http: HttpConfig = Field(default_factory=HttpConfig)
     tui: TUIConfig = Field(default_factory=TUIConfig)
+    monitor: MonitorConfig = Field(default_factory=MonitorConfig)
 
 
 class ConfigManager:

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 
 from rich.syntax import Syntax
+from rich.table import Table
 
 from src import __version__
 from src.config.manager import ConfigManager
@@ -57,6 +59,7 @@ def show_help(history: HistoryWritable) -> None:
     history.write("/verbose  - 思考过程展示开关（/verbose on|off|toggle）")
     history.write("/status   - 状态栏开关（/status on|off|toggle）")
     history.write("/copy     - 复制输出（/copy all|N|mode）")
+    history.write("/monitor  - 系统资源快照（CPU/内存/磁盘/负载）")
     history.write("/exit     - 退出")
     history.write("[dim]快捷键：Ctrl+C 退出，Ctrl+L 清空对话，Ctrl+Y 复制模式[/dim]")
 
@@ -306,3 +309,51 @@ def _render_history_markdown(export_data: dict[str, object]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def show_monitor_snapshot(history: HistoryWritable) -> None:
+    """直接执行 monitor.snapshot 并以 Rich 表格展示结果"""
+    from src.workers.monitor import MonitorWorker
+
+    worker = MonitorWorker()
+
+    try:
+        result = asyncio.get_event_loop().run_until_complete(
+            worker.execute("snapshot", {})
+        )
+    except RuntimeError:
+        # 已在 async 上下文中，用 asyncio.run 的替代方案
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            result = pool.submit(
+                asyncio.run, worker.execute("snapshot", {})
+            ).result()
+
+    if not result.success or not isinstance(result.data, list):
+        history.write(f"[red]监控快照失败: {result.message}[/red]")
+        return
+
+    status_style: dict[str, str] = {
+        "ok": "green",
+        "warning": "yellow",
+        "critical": "red",
+    }
+
+    table = Table(title="系统资源快照", expand=True)
+    table.add_column("指标", style="cyan", no_wrap=True)
+    table.add_column("状态", justify="center")
+    table.add_column("详情")
+
+    for item in result.data:
+        status = str(item.get("status", "ok"))
+        color = status_style.get(status, "white")
+        status_label = f"[{color}]{status.upper()}[/{color}]"
+        table.add_row(
+            str(item.get("name", "")),
+            status_label,
+            str(item.get("message", "")),
+        )
+
+    history.write(table)
+    history.write(f"[dim]{result.message}[/dim]")

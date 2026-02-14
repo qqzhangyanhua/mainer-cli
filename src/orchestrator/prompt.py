@@ -42,6 +42,7 @@ class PromptBuilder:
         "http": ["fetch_url", "fetch_github_readme", "list_github_files"],
         "deploy": ["deploy"],  # 简化：只暴露一键部署
         "git": ["clone", "pull", "status"],  # Git 操作（显式路径优先）
+        "monitor": ["snapshot", "check_port", "check_http", "check_process", "top_processes"],
     }
 
     def get_worker_capabilities(
@@ -130,6 +131,31 @@ Worker Details:
   - args: {{"repo_url": "https://github.com/owner/repo", "target_dir": "<当前工作目录>"}}
   - risk_level: medium
   - 示例: {{"worker": "deploy", "action": "deploy", "args": {{"repo_url": "https://github.com/user/app"}}, "risk_level": "medium"}}
+
+- monitor.snapshot: 系统资源全貌（CPU + 内存 + 磁盘 + 负载）
+  - args: {{}} 或 {{"include": ["cpu", "memory", "disk", "load"]}} 选择性采集
+  - risk_level: safe
+  - 示例: {{"worker": "monitor", "action": "snapshot", "args": {{}}, "risk_level": "safe"}}
+
+- monitor.check_port: TCP 端口存活检查 + 响应时间
+  - args: {{"port": 8080}} 或 {{"port": 8080, "host": "192.168.1.1"}}
+  - risk_level: safe
+  - 示例: {{"worker": "monitor", "action": "check_port", "args": {{"port": 8080}}, "risk_level": "safe"}}
+
+- monitor.check_http: HTTP 健康检查（状态码 + 延迟）
+  - args: {{"url": "http://localhost:8080/health"}} 可选 {{"timeout": 10}}
+  - risk_level: safe
+  - 示例: {{"worker": "monitor", "action": "check_http", "args": {{"url": "http://localhost:8080/health"}}, "risk_level": "safe"}}
+
+- monitor.check_process: 按名称查找进程（PID/CPU/内存）
+  - args: {{"name": "nginx"}}
+  - risk_level: safe
+  - 示例: {{"worker": "monitor", "action": "check_process", "args": {{"name": "nginx"}}, "risk_level": "safe"}}
+
+- monitor.top_processes: 按 CPU/内存排序的 Top N 进程
+  - args: {{"sort_by": "cpu"}} 或 {{"sort_by": "memory"}}, 可选 {{"limit": 10}}
+  - risk_level: safe
+  - 示例: {{"worker": "monitor", "action": "top_processes", "args": {{"sort_by": "cpu", "limit": 10}}, "risk_level": "safe"}}
 
 - system.delete_files: Delete one or more files
   - args: {{"files": ["path1", "path2", ...]}}

@@ -155,7 +155,7 @@ SCENARIOS: List[Scenario] = [
         category="monitoring",
         icon="📊",
         steps=[
-            ScenarioStep(prompt="查看系统资源", description="CPU、内存、磁盘"),
+            ScenarioStep(prompt="系统资源快照", description="CPU、内存、磁盘、负载一览"),
             ScenarioStep(prompt="查看服务状态", description="检查关键服务"),
             ScenarioStep(prompt="查看网络连接", description="检查端口和连接"),
         ],

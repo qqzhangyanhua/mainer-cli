@@ -633,6 +633,11 @@ class OpsAIApp(App[str]):
         if command == "copy":
             self._handle_copy_command(parts[1:] if len(parts) > 1 else [])
             return True
+        if command == "monitor":
+            from src.tui.commands import show_monitor_snapshot
+
+            show_monitor_snapshot(writer)
+            return True
 
         return False
 
@@ -867,6 +872,7 @@ class OpsAIApp(App[str]):
             ("/verbose", f"思考过程展示开关（当前: {verbose_state}）", ""),
             ("/status", f"状态栏开关（当前: {status_state}）", ""),
             ("/copy", "复制输出（/copy all|N|mode）", ""),
+            ("/monitor", "系统资源快照（CPU/内存/磁盘/负载）", ""),
             ("/exit", "退出", ""),
         ]
 

@@ -112,6 +112,20 @@ class OrchestratorEngine:
         except ImportError:
             pass
 
+        # 注册 MonitorWorker
+        try:
+            from src.workers.monitor import MonitorWorker
+
+            mon_cfg = self._config.monitor
+            thresholds = {
+                "cpu": (mon_cfg.cpu_warning, mon_cfg.cpu_critical),
+                "memory": (mon_cfg.memory_warning, mon_cfg.memory_critical),
+                "disk": (mon_cfg.disk_warning, mon_cfg.disk_critical),
+            }
+            self._workers["monitor"] = MonitorWorker(thresholds=thresholds)
+        except ImportError:
+            pass
+
         # 注册 DeployWorker（需要 HttpWorker、ShellWorker 和 LLMClient）
         http_worker = self._workers.get("http")
         shell_worker = self._workers.get("shell")

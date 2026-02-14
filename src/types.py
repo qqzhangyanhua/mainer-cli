@@ -8,6 +8,22 @@ from pydantic import BaseModel, Field
 
 RiskLevel = Literal["safe", "medium", "high"]
 
+# 监控指标状态
+MonitorStatus = Literal["ok", "warning", "critical"]
+
+# 监控检查类型
+MonitorCheckType = Literal["cpu", "memory", "disk", "port", "http", "process"]
+
+
+class MonitorMetric(BaseModel):
+    """单项监控指标"""
+
+    name: str = Field(..., description="指标名称，如 cpu_usage, disk_/, port_8080")
+    value: float = Field(..., description="当前值")
+    unit: str = Field(..., description="单位，如 percent, ms, MB")
+    status: MonitorStatus = Field(..., description="状态：ok/warning/critical")
+    message: str = Field(..., description="人类可读描述")
+
 ArgValue = Union[str, int, bool, list[str], dict[str, str]]
 
 # 支持的分析对象类型
@@ -69,6 +85,7 @@ PreprocessIntent = Literal[
     "greeting",  # 问候
     "identity",  # 自我介绍
     "deploy",  # 部署项目
+    "monitor",  # 系统监控快照
     "unknown",  # 未知意图
 ]
 
