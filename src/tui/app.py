@@ -651,11 +651,38 @@ class OpsAIApp(App[str]):
                 writer,
             )
             return True
+        if command in {"dashboard", "dash"}:
+            self._open_dashboard()
+            return True
 
         return False
 
     def action_clear(self) -> None:
         self._clear_conversation()
+
+    # ── Dashboard 模式 ───────────────────────────────────────
+
+    def _open_dashboard(self) -> None:
+        """打开实时健康仪表盘"""
+        from src.tui.dashboard import DashboardScreen
+        from src.workers.monitor import MonitorWorker
+
+        monitor = self._engine.get_worker("monitor")
+        if monitor is None:
+            monitor = MonitorWorker()
+
+        thresholds = {
+            "cpu": (self._config.monitor.cpu_warning, self._config.monitor.cpu_critical),
+            "memory": (self._config.monitor.memory_warning, self._config.monitor.memory_critical),
+            "disk": (self._config.monitor.disk_warning, self._config.monitor.disk_critical),
+        }
+
+        screen = DashboardScreen(
+            monitor_worker=monitor,
+            interval=3,
+            thresholds=thresholds,
+        )
+        self.push_screen(screen)
 
     # ── Watch 模式（持续监控 + 告警）──────────────────────────
 
@@ -1012,6 +1039,7 @@ class OpsAIApp(App[str]):
             ("/status", f"状态栏开关（当前: {status_state}）", ""),
             ("/copy", "复制输出（/copy all|N|mode）", ""),
             ("/monitor", "系统资源快照（CPU/内存/磁盘/负载）", ""),
+            ("/dashboard", "实时健康仪表盘（自动刷新）", ""),
             ("/logs", "日志分析（/logs <容器名> 或 /logs file <路径>）", ""),
             ("/exit", "退出", ""),
         ]
