@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import platform
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -146,6 +147,21 @@ class AnalyzeTemplateCache:
 
 # 预置的默认分析命令模板
 # 使用 {name} 作为占位符
+# 端口检查命令按 OS 区分（macOS 没有 ss/netstat -p）
+_IS_MACOS = platform.system() == "Darwin"
+
+_PORT_COMMANDS_MACOS: list[str] = [
+    "lsof -iTCP:{name} -sTCP:LISTEN -P -n",
+    "lsof -i :{name} -P -n",
+    "curl -sI http://localhost:{name} --max-time 3 || true",
+]
+
+_PORT_COMMANDS_LINUX: list[str] = [
+    "ss -tlnp | grep :{name}",
+    "lsof -i :{name} -P -n",
+    "curl -sI http://localhost:{name} --max-time 3 || true",
+]
+
 DEFAULT_ANALYZE_COMMANDS: dict[str, list[str]] = {
     "docker": [
         "docker inspect {name}",
@@ -156,11 +172,7 @@ DEFAULT_ANALYZE_COMMANDS: dict[str, list[str]] = {
         "lsof -p {name} 2>/dev/null | head -50",
         "cat /proc/{name}/cmdline 2>/dev/null | tr '\\0' ' '",
     ],
-    "port": [
-        "lsof -i :{name}",
-        "ss -tlnp | grep :{name}",
-        "netstat -tlnp 2>/dev/null | grep :{name}",
-    ],
+    "port": _PORT_COMMANDS_MACOS if _IS_MACOS else _PORT_COMMANDS_LINUX,
     "file": [
         "file {name}",
         "ls -la {name}",

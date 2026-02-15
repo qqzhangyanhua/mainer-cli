@@ -159,6 +159,27 @@ class AnalyzeWorker(BaseWorker):
                 task_completed=False,
             )
 
+        # 检查是否有实质性数据（排除失败和无匹配结果）
+        has_meaningful_data = any(
+            not output.startswith("[Failed:")
+            and "(no matches found)" not in output
+            and output.strip()
+            for output in collected_info.values()
+        )
+        if not has_meaningful_data:
+            no_data_msg = f"未检测到 {target_str} 相关信息。"
+            if type_str == "port":
+                no_data_msg += (
+                    f"\n端口 {target_str} 当前没有进程在监听。"
+                    f"\n如果你确认该端口可以访问，可能需要 root 权限查看，"
+                    f"或服务绑定在特定网络接口上。"
+                )
+            return WorkerResult(
+                success=True,
+                message=no_data_msg,
+                task_completed=True,
+            )
+
         # 3. 调用 LLM 总结分析
         summary = await self._generate_summary(type_str, target_str, collected_info)
 

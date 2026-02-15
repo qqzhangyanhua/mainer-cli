@@ -103,7 +103,7 @@ Worker Details:
       - macOS/Darwin: lsof -ti :<PORT> | xargs kill -9
       - Linux: fuser -k <PORT>/tcp  OR  kill $(lsof -ti :<PORT>)
     * Find process on port:
-      - macOS/Darwin: lsof -i :<PORT>
+      - macOS/Darwin: lsof -iTCP:<PORT> -sTCP:LISTEN -P -n  OR  curl -sI http://localhost:<PORT>
       - Linux: ss -tlnp | grep :<PORT>  OR  netstat -tlnp | grep :<PORT>
     * Check memory usage:
       - macOS/Darwin: ps aux | sort -nrk 4 | head -n 11  OR  top -l 1 -o mem -n 10  OR  vm_stat
@@ -274,6 +274,17 @@ CRITICAL Rules:
        → Step 2: chat.respond "当前目录下共有 12 个文件/文件夹，包括 src/、tests/、README.md 等。"
    - For action commands (kill, restart, stop, start, rm, etc.), also summarize:
      * "已成功重启 nginx 服务" or "端口 8080 的进程已被终止"
+0.5. ⭐⭐⭐ VERIFY BEFORE ANSWERING (验证优先于回答!!!):
+   - When user CHALLENGES, CONTRADICTS, or QUESTIONS a previous result, you MUST run a new command to verify!
+   - NEVER assume or guess based on previous context — always check the actual system state!
+   - Trigger phrases: "还能访问", "还在运行", "不对", "没生效", "但是", "可是", "怎么还", "为什么还"
+   - Example: Previous action killed nginx, user says "8080还能访问"
+     → WRONG: chat.respond "nginx已停止，8080应该不可访问" (guessing!)
+     → RIGHT: shell.execute_command "lsof -i :8080" (verify first!)
+   - Example: User says "服务没停" after you stopped a container
+     → WRONG: chat.respond "已经停了" (assuming!)
+     → RIGHT: shell.execute_command "docker ps" (check actual state!)
+   - Key principle: The user knows what they see. If they say something contradicts your expectation, VERIFY.
 1. ⭐⭐⭐ INTENT PRIORITY (意图优先级 - 最重要!!!):
    - If user mentions BOTH listing AND explaining, EXPLAINING takes priority!
    - "我只有一个docker服务，这个是干嘛的" → User already knows the list, wants EXPLANATION → use analyze.explain
@@ -408,12 +419,16 @@ Output format:
                     "5. If recovery is impossible, use chat.respond to explain the situation and suggest manual steps."
                 )
                 parts.append("")
-            # 当已有 shell 执行结果时，强制要求 LLM 用 chat.respond 总结
+            # 当已有 shell 执行结果时，根据用户新输入决定行为
             elif has_shell_result:
                 parts.append(
                     "IMPORTANT: The command above has ALREADY been executed. "
-                    "Do NOT run it again. You MUST now use chat.respond to summarize "
-                    "the result in natural language (Chinese) for the user."
+                    "Do NOT run it again.\n"
+                    "- If the user's new request is asking for a SUMMARY or EXPLANATION of the result above, "
+                    "use chat.respond to summarize in natural language (Chinese).\n"
+                    "- If the user's new request raises a NEW QUESTION, CHALLENGE, or CONCERN "
+                    "(e.g. '还能访问', '没生效', '不对', asks about a different topic), "
+                    "you MUST execute a NEW command to investigate — do NOT guess or assume!"
                 )
                 parts.append("")
 
