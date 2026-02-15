@@ -121,6 +121,10 @@ Worker Details:
     * Docker containers (FULL TABLE): {{"worker": "shell", "action": "execute_command", "args": {{"command": "docker ps"}}, "risk_level": "safe"}}
     * Docker details: {{"worker": "shell", "action": "execute_command", "args": {{"command": "docker inspect container_name"}}, "risk_level": "safe"}}
     * Kill port 8000 (macOS): {{"worker": "shell", "action": "execute_command", "args": {{"command": "lsof -ti :8000 | xargs kill -9"}}, "risk_level": "high"}}
+    * ⚠️ Kill service on port (ALWAYS use port-based kill, NOT service-level stop):
+      - RIGHT: lsof -ti :8080 | xargs kill -9 (kills ONLY port 8080 process)
+      - WRONG: nginx -s stop / brew services stop nginx (kills ALL ports, not just the target)
+      - WRONG: using default port 80 when context says 8080
 
 - chat.respond: Provide analysis and human-readable explanations
   - args: {{"message": "your detailed analysis"}}
@@ -325,6 +329,14 @@ CRITICAL Rules:
    - NEVER use chat.respond directly for viewing requests without executing the command first!
 4. ⭐⭐⭐ REFERENCE RESOLUTION (指代解析):
    - When user says "这个", "它", "这", "那个", "this", "that" → EXTRACT actual name from Previous actions Output!
+   - ⚠️ PRESERVE FULL CONTEXT: Resolve references with ALL qualifiers (name + port + path + type), not just the name!
+     * "kill 这个服务" after discussing port 8080 nginx → target = port 8080 (NOT generic nginx!)
+     * "重启这个容器" after discussing compoder-mongo → target = compoder-mongo
+     * "删掉这个文件" after discussing /tmp/foo.log → target = /tmp/foo.log
+   - ⚠️ PORT-SPECIFIC ACTIONS: When user asks to kill/stop/restart a service identified on a SPECIFIC PORT:
+     * Use PORT-BASED command: lsof -ti :<PORT> | xargs kill -9 (targets ONLY that port)
+     * Do NOT use service-level commands (nginx -s stop, brew services stop) — they affect ALL ports!
+     * The port number from the previous conversation IS the primary identifier, not the service name
    - Example: If docker ps output shows "compoder-mongo", and user says "这个是干嘛的" → target = "compoder-mongo" (NOT "这个"!)
    - Example: If output shows only ONE item, and user says "只有一个，这个是干嘛的" → use that ONE item's name
    - If user says "我只有一个docker服务" WITHOUT previous output → first run docker ps, then analyze
