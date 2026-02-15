@@ -2,7 +2,7 @@
 
 > 用自然语言操作服务器，无需记命令
 
-**核心能力**：查日志 · 查状态 · 重启服务 · 检查资源 · 文件操作 · Git 管理 · 一键部署 · 系统监控 · 智能分析
+**核心能力**：查日志 · 查状态 · 重启服务 · 检查资源 · 文件操作 · Git 管理 · 一键部署 · 系统监控 · 智能分析 · 日志分析 · 告警通知 · SSH 远程 · Compose 编排 · Kubernetes 管理 · 定时任务 · 会话记忆 · 变更回滚
 
 ## 系统架构图
 
@@ -17,6 +17,7 @@ flowchart TB
         ENG["OrchestratorEngine<br/>src/orchestrator/engine.py"]
         GRAPH["ReactGraph（可选）<br/>src/orchestrator/graph/"]
         SCN["ScenarioManager<br/>src/orchestrator/scenarios.py"]
+        SCHED["Scheduler<br/>src/scheduler/scheduler.py"]
     end
 
     subgraph L3["策略与规则层 Domain"]
@@ -33,13 +34,17 @@ flowchart TB
         WRK["Workers<br/>src/workers/*.py"]
         LLM["LLM Client<br/>src/llm/client.py"]
         CFG["Config Manager<br/>src/config/manager.py"]
-        CTX["Context Detector<br/>src/context/*.py"]
-        TMP["Template Manager<br/>src/templates/manager.py"]
+        CTX["Context<br/>src/context/*.py"]
+        TMP["Template / Runbook<br/>src/templates/"]
+        MEM["Session Memory<br/>src/context/memory.py"]
+        CHG["Change Tracker<br/>src/context/change_tracker.py"]
     end
 
     subgraph L5["外部系统层 External"]
         OS["OS / Shell"]
-        DK["Docker Engine"]
+        DK["Docker / Compose"]
+        K8S["Kubernetes"]
+        SSH["SSH Remote Hosts"]
         GH["GitHub / HTTP"]
         AUD["~/.opsai/audit.log"]
     end
@@ -48,6 +53,7 @@ flowchart TB
     CLI --> TMP
     TUI --> ENG
     TUI --> SCN
+    TUI --> SCHED
 
     ENG --> GRAPH
     ENG --> PRE
@@ -62,14 +68,19 @@ flowchart TB
     ENG --> CFG
     ENG --> LLM
     ENG --> WRK
+    ENG --> MEM
+    ENG --> CHG
+    SCHED --> TMP
 
     WRK --> OS
     WRK --> DK
+    WRK --> K8S
+    WRK --> SSH
     WRK --> GH
     WRK --> AUD
 ```
 
-分层说明：上层负责交互与编排，中层负责规则与安全决策，下层负责具体执行与外部系统交互，层间依赖单向向下，便于测试、替换与扩展。
+分层说明：上层负责交互与编排（含定时调度），中层负责规则与安全决策，下层负责具体执行（含 Worker、记忆、变更追踪）与外部系统交互，层间依赖单向向下，便于测试、替换与扩展。
 
 ## 快速开始
 
@@ -208,6 +219,60 @@ opsai-tui
 ```
 </details>
 
+<details>
+<summary><b>日志分析</b></summary>
+
+```bash
+opsai-tui
+> "分析 nginx 容器的错误日志"
+# → 自动解析日志级别、模式聚合、时间趋势
+
+# 或使用斜杠命令
+/logs nginx
+/logs /var/log/syslog
+```
+</details>
+
+<details>
+<summary><b>SSH 远程管理</b></summary>
+
+```bash
+# 管理远程主机
+opsai host add web1 --address 192.168.1.100 --user deploy
+opsai host list
+opsai host test web1
+
+# 通过 TUI 远程执行
+opsai-tui
+> "在 web1 上检查磁盘使用情况"
+> "在所有 production 标签的主机上执行 df -h"
+```
+</details>
+
+<details>
+<summary><b>Compose 多容器编排</b></summary>
+
+```bash
+opsai-tui
+> "查看 compose 项目状态"
+> "检查所有 compose 服务是否健康"
+> "重启 web 服务"
+> "查看 api 服务的日志"
+```
+</details>
+
+<details>
+<summary><b>Kubernetes 管理</b></summary>
+
+```bash
+opsai-tui
+> "查看所有 pod 的状态"
+> "查看 nginx-pod 的详细信息"
+> "重启 web deployment"
+> "把 api deployment 扩容到 5 个副本"
+```
+</details>
+
 ---
 
 ## 功能一览
@@ -218,7 +283,12 @@ opsai-tui
 |--------|------|------|
 | **system** | 系统操作 | 列出文件、查找大文件、检查磁盘、删除文件、写入文件、追加内容、替换内容 |
 | **container** | Docker 管理 | 列出容器、查看详情、获取日志、重启、停止、启动、资源统计 |
+| **compose** | Compose 编排 | 项目状态、批量健康检查、服务日志、重启、启动、停止（自动检测 v1/v2） |
+| **kubernetes** | Kubernetes 管理 | get/describe/logs/top/rollout/scale，支持命名空间 |
 | **monitor** | 系统监控 | 资源快照、端口检测、HTTP 探活、进程检查、Top 进程排序 |
+| **log_analyzer** | 日志分析 | 日志解析、模式聚合、时间趋势、错误排名（支持文件/容器/原始文本） |
+| **notifier** | 告警通知 | Webhook 推送、桌面通知、多渠道路由（支持告警恢复通知） |
+| **remote** | SSH 远程 | 远程命令执行、主机管理、连接测试（支持密钥认证） |
 | **git** | Git 操作 | clone、pull、status |
 | **shell** | 命令执行 | 执行白名单内的 shell 命令（含安全策略） |
 | **http** | 网络请求 | 获取 URL、获取 GitHub README、列出仓库文件 |
@@ -226,6 +296,64 @@ opsai-tui
 | **analyze** | 智能分析 | 解释命令输出和错误信息（含模板缓存加速） |
 | **chat** | 对话处理 | 处理问候、闲聊等非运维对话 |
 | **audit** | 审计日志 | 记录所有实际执行的操作 |
+
+### Runbook 执行引擎
+
+基于模板的多步运维流程编排，支持：
+
+- **条件分支**：`condition: "check.success == false"` — 根据前序步骤结果决定是否执行
+- **数据传递**：`output_key` 存储步骤结果，`{{ref:step_key.field}}` 在后续步骤中引用
+- **失败策略**：`on_failure: abort|skip|retry`，`retry_count` 设定重试次数
+- **进度回调**：实时报告当前执行进度
+
+```json
+{
+  "steps": [
+    {"worker": "monitor", "action": "snapshot", "output_key": "check"},
+    {"worker": "system", "action": "find_large_files",
+     "condition": "check.success", "args": {"path": "/var/log"}},
+    {"worker": "container", "action": "restart",
+     "args": {"container_id": "{{ref:check.container}}"},
+     "on_failure": "retry", "retry_count": 2}
+  ]
+}
+```
+
+### 定时任务调度
+
+基于 cron 表达式的模板周期执行：
+
+```bash
+# 通过 API 使用（TUI/CLI 集成中）
+scheduler.add_job(
+    name="每日磁盘检查",
+    cron="0 3 * * *",          # 每天凌晨 3 点
+    template_name="disk_cleanup",
+    context={"path": "/var/log"},
+    dry_run=True,              # 安全模式
+    max_runs=30,               # 最多执行 30 次
+)
+```
+
+支持：任务暂停/恢复、执行历史查询、到期自动检测、最大执行次数限制。
+
+### 会话记忆
+
+跨会话上下文持久化，让 AI 记住环境信息和用户偏好：
+
+- **记忆分类**：`fact`（环境事实）、`preference`（用户偏好）、`note`（笔记）
+- **自动注入**：高频 + 最近更新的记忆自动注入 LLM Prompt
+- **搜索查询**：支持关键词模糊搜索和分类过滤
+- **容量管理**：LRU 淘汰策略，最多 200 条
+
+### 变更管理
+
+操作快照与一键回滚：
+
+- **文件快照**：修改/删除文件前自动备份
+- **一键回滚**：`tracker.rollback(change_id)` 恢复到操作前状态
+- **命令记录**：记录执行的命令（不可回滚，用于审计追溯）
+- **持久化存储**：索引和备份文件持久化到 `~/.opsai/changes/`
 
 ### TUI 斜杠命令
 
@@ -243,6 +371,8 @@ opsai-tui
 | `/status` | 状态栏开关（`/status on\|off\|toggle`） |
 | `/copy` | 复制输出（`/copy all\|N\|mode`） |
 | `/monitor` | 系统资源快照表格（CPU/内存/磁盘/负载 + 状态判定） |
+| `/dashboard` | 全屏健康仪表盘（CPU/内存/磁盘可视化进度条 + 自动刷新） |
+| `/logs` | 日志分析（`/logs <容器名>` 或 `/logs <文件路径>`） |
 | `/exit` | 退出 |
 
 ### TUI 快捷键
@@ -432,7 +562,12 @@ opsai cache clear -f
     "memory_critical": 95.0,
     "disk_warning": 85.0,
     "disk_critical": 95.0
-  }
+  },
+  "notifications": {
+    "enabled": false,
+    "channels": []
+  },
+  "hosts": {}
 }
 ```
 
@@ -448,6 +583,8 @@ opsai cache clear -f
 | `audit` | `log_path` / `max_log_size_mb` / `retain_days` | 审计日志路径、大小上限与保留天数 |
 | `tui` | `show_thinking` | 是否在 TUI 内容区展示 LLM 思考过程 |
 | `monitor` | `*_warning` / `*_critical` | 监控指标告警与严重告警阈值（百分比） |
+| `notifications` | `enabled` / `channels` | 告警通知开关与渠道配置（webhook/desktop） |
+| `hosts` | `<别名>` | SSH 远程主机配置（address/port/user/key_path/labels） |
 
 ---
 
@@ -466,6 +603,10 @@ opsai template run <name> [options]   # 运行任务模板
 opsai cache list                      # 列出分析缓存
 opsai cache show <type>               # 查看缓存详情
 opsai cache clear [type] [-f]         # 清除缓存
+opsai host add <name> [options]       # 添加远程主机
+opsai host list                       # 列出远程主机
+opsai host remove <name>              # 删除远程主机
+opsai host test <name>                # 测试主机连接
 opsai-tui                             # 启动 TUI 交互模式
 ```
 
@@ -474,7 +615,7 @@ opsai-tui                             # 启动 TUI 交互模式
 ## 常见问题
 
 **Q: 支持哪些运维工具？**
-A: Docker、Git、Systemd、通用 Shell 命令、HTTP 探活、系统资源监控。
+A: Docker、Docker Compose、Kubernetes、Git、Systemd、SSH 远程、通用 Shell 命令、HTTP 探活、系统资源监控。
 
 **Q: 需要 root 权限吗？**
 A: 不需要。继承当前用户权限，不涉及提权。
@@ -528,7 +669,10 @@ uv run ruff check src/ tests/
 | LLM 客户端 | OpenAI SDK（兼容 Ollama/OpenAI/各类 API） |
 | 配置管理 | Pydantic v2 |
 | 编排引擎 | 自研 ReAct 循环 + LangGraph（可选） |
+| Runbook 引擎 | 条件分支 + 数据传递 + 失败重试 |
+| 定时调度 | Cron 表达式解析 + 持久化调度 |
 | 系统监控 | psutil |
+| SSH 远程 | asyncssh |
 | HTTP 客户端 | httpx |
 | 测试 | pytest + pytest-asyncio |
 | 类型检查 | mypy --strict |

@@ -15,7 +15,11 @@
       "mcp__sequential-thinking__sequentialthinking",
       "Bash(git reset:*)",
       "Bash(xargs:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(wc:*)",
+      "Bash(python3:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(git status:*)"
     ]
   }
 }
