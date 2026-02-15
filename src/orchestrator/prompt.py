@@ -105,6 +105,10 @@ Worker Details:
     * Find process on port:
       - macOS/Darwin: lsof -iTCP:<PORT> -sTCP:LISTEN -P -n  OR  curl -sI http://localhost:<PORT>
       - Linux: ss -tlnp | grep :<PORT>  OR  netstat -tlnp | grep :<PORT>
+      - ⚠️ CRITICAL: lsof/ss WITHOUT root CANNOT see processes owned by other users!
+        If lsof returns empty, the port may STILL have a service running as root.
+        ALWAYS verify with: curl -sI http://localhost:<PORT> --max-time 3
+        If curl gets a response but lsof is empty → service runs as another user (needs sudo lsof)
     * Check memory usage:
       - macOS/Darwin: ps aux | sort -nrk 4 | head -n 11  OR  top -l 1 -o mem -n 10  OR  vm_stat
       - Linux: ps aux --sort=-%mem | head -n 11  OR  free -h  OR  top -bn1 | head -n 20
@@ -278,13 +282,28 @@ CRITICAL Rules:
    - When user CHALLENGES, CONTRADICTS, or QUESTIONS a previous result, you MUST run a new command to verify!
    - NEVER assume or guess based on previous context — always check the actual system state!
    - Trigger phrases: "还能访问", "还在运行", "不对", "没生效", "但是", "可是", "怎么还", "为什么还"
+   - ⚠️ PORT VERIFICATION: When user says a port IS accessible but lsof found nothing:
+     → Use curl -sI http://localhost:<PORT> --max-time 3 to verify connectivity
+     → If curl succeeds, the service runs as another user (lsof without sudo can't see it)
+     → Report: "端口有服务响应(HTTP xxx)，但进程以其他用户身份运行，需要 sudo lsof 才能查看"
    - Example: Previous action killed nginx, user says "8080还能访问"
      → WRONG: chat.respond "nginx已停止，8080应该不可访问" (guessing!)
-     → RIGHT: shell.execute_command "lsof -i :8080" (verify first!)
+     → RIGHT: shell.execute_command "curl -sI http://localhost:8080 --max-time 3" (verify first!)
    - Example: User says "服务没停" after you stopped a container
      → WRONG: chat.respond "已经停了" (assuming!)
      → RIGHT: shell.execute_command "docker ps" (check actual state!)
    - Key principle: The user knows what they see. If they say something contradicts your expectation, VERIFY.
+0.6. ⭐⭐ PORT CHECK WORKFLOW (端口检查必须两步验证):
+   - When checking what service runs on a port, you MUST do TWO things:
+     Step 1: lsof -iTCP:<PORT> -sTCP:LISTEN -P -n (process-level query)
+     Step 2: curl -sI http://localhost:<PORT> --max-time 3 (connectivity verification)
+   - WHY: lsof without root CANNOT see processes owned by other users (root, www-data, nobody, etc.)
+     Many services (nginx, Apache, MySQL) run as non-current-user — lsof will return empty!
+   - Interpretation:
+     * lsof found + curl OK → report process info + service details
+     * lsof empty + curl OK → "端口有服务响应，但进程以其他用户运行（需 sudo lsof 查看详情）"
+     * lsof empty + curl FAIL → "端口无服务监听"
+   - NEVER conclude "no service on port" based on lsof alone!
 1. ⭐⭐⭐ INTENT PRIORITY (意图优先级 - 最重要!!!):
    - If user mentions BOTH listing AND explaining, EXPLAINING takes priority!
    - "我只有一个docker服务，这个是干嘛的" → User already knows the list, wants EXPLANATION → use analyze.explain

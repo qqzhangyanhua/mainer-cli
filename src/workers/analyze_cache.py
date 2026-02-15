@@ -151,15 +151,15 @@ class AnalyzeTemplateCache:
 _IS_MACOS = platform.system() == "Darwin"
 
 _PORT_COMMANDS_MACOS: list[str] = [
+    "curl -sI http://localhost:{name} --max-time 3",
     "lsof -iTCP:{name} -sTCP:LISTEN -P -n",
     "lsof -i :{name} -P -n",
-    "curl -sI http://localhost:{name} --max-time 3 || true",
 ]
 
 _PORT_COMMANDS_LINUX: list[str] = [
+    "curl -sI http://localhost:{name} --max-time 3",
     "ss -tlnp | grep :{name}",
     "lsof -i :{name} -P -n",
-    "curl -sI http://localhost:{name} --max-time 3 || true",
 ]
 
 DEFAULT_ANALYZE_COMMANDS: dict[str, list[str]] = {
