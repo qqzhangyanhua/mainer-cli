@@ -358,3 +358,149 @@ class TestReactNodesSafetyPolicy:
 
         assert result.get("is_error") is None
         assert result.get("needs_approval") is False
+
+
+class TestCheckNodeErrorRecovery:
+    """check_node 错误恢复测试"""
+
+    @pytest.fixture
+    def mock_llm(self) -> MockLLMClient:
+        return MockLLMClient()
+
+    @pytest.fixture
+    def workers(self) -> dict[str, BaseWorker]:
+        return {
+            "system": SystemWorker(),
+            "audit": AuditWorker(),
+        }
+
+    @pytest.fixture
+    def context(self) -> EnvironmentContext:
+        return EnvironmentContext()
+
+    @pytest.fixture
+    def nodes(
+        self,
+        mock_llm: MockLLMClient,
+        workers: dict[str, BaseWorker],
+        context: EnvironmentContext,
+    ) -> ReactNodes:
+        return ReactNodes(
+            llm_client=mock_llm,
+            workers=workers,
+            context=context,
+            dry_run=False,
+            max_risk="high",
+            auto_approve_safe=True,
+            require_dry_run_for_high_risk=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_command_failure_triggers_recovery(self, nodes: ReactNodes) -> None:
+        """命令执行失败（有 exit_code）应回到 reason 而非终止"""
+        state = {
+            "worker_result": {
+                "success": False,
+                "message": "Command failed: brew services start nginx",
+                "data": {
+                    "command": "brew services start nginx",
+                    "exit_code": 1,
+                    "stdout": "",
+                    "stderr": "Bootstrap failed",
+                },
+                "task_completed": False,
+            },
+            "iteration": 0,
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        # 应该回到 reason（is_error=False, task_completed=False）
+        assert result.get("is_error", False) is False
+        assert result.get("task_completed") is False
+        assert result.get("error_recovery_count") == 1
+        assert result.get("iteration") == 1
+
+    @pytest.mark.asyncio
+    async def test_recovery_exhausted_becomes_fatal(self, nodes: ReactNodes) -> None:
+        """恢复次数耗尽后应终止"""
+        state = {
+            "worker_result": {
+                "success": False,
+                "message": "Command failed again",
+                "data": {"command": "sudo nginx", "exit_code": 1, "stdout": "", "stderr": "error"},
+                "task_completed": False,
+            },
+            "iteration": 2,
+            "max_iterations": 5,
+            "error_recovery_count": 2,  # 已经重试 2 次
+        }
+
+        result = await nodes.check_node(state)
+
+        # 恢复次数耗尽，应该终止
+        assert result.get("is_error") is True
+        assert "Command failed again" in str(result.get("error_message", ""))
+
+    @pytest.mark.asyncio
+    async def test_system_error_is_immediately_fatal(self, nodes: ReactNodes) -> None:
+        """系统级错误（无 exit_code，如 unknown worker）应立即终止"""
+        state = {
+            "worker_result": {
+                "success": False,
+                "message": "Unknown worker: nonexistent",
+                "data": None,
+                "task_completed": False,
+            },
+            "iteration": 0,
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        # 系统错误不可恢复，应立即终止
+        assert result.get("is_error") is True
+
+    @pytest.mark.asyncio
+    async def test_success_not_affected_by_recovery(self, nodes: ReactNodes) -> None:
+        """成功执行不受恢复逻辑影响"""
+        state = {
+            "worker_result": {
+                "success": True,
+                "message": "Command succeeded",
+                "data": {"command": "nginx", "exit_code": 0, "stdout": "ok"},
+                "task_completed": False,
+            },
+            "iteration": 0,
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        assert result.get("is_error", False) is False
+        assert result.get("task_completed") is False
+        assert result.get("iteration") == 1
+
+    @pytest.mark.asyncio
+    async def test_max_iterations_stops_recovery(self, nodes: ReactNodes) -> None:
+        """即使有恢复预算，达到 max_iterations 也应终止"""
+        state = {
+            "worker_result": {
+                "success": False,
+                "message": "Command failed",
+                "data": {"command": "nginx", "exit_code": 1, "stdout": "", "stderr": "err"},
+                "task_completed": False,
+            },
+            "iteration": 4,  # next would be 5, hitting max
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        # max_iterations 达到，不再恢复
+        assert result.get("is_error") is True

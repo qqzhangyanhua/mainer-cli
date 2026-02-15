@@ -371,6 +371,7 @@ Output format:
         # 添加历史记录
         if history:
             has_shell_result = False
+            has_failed_command = False
             parts.append("Previous actions and results:")
             for entry in history:
                 if entry.user_input:
@@ -388,10 +389,27 @@ Output format:
 
                 if entry.instruction.worker == "shell":
                     has_shell_result = True
+                    if not entry.result.success:
+                        has_failed_command = True
             parts.append("")
 
+            # 命令失败时：要求 LLM 分析错误并尝试替代方案
+            if has_failed_command:
+                parts.append(
+                    "IMPORTANT: The previous command FAILED. Analyze the error message carefully and:\n"
+                    "1. Identify the root cause (permission denied? not installed? wrong syntax?)\n"
+                    "2. Try an ALTERNATIVE approach to accomplish the same goal\n"
+                    "3. Common recovery strategies:\n"
+                    "   - Permission error → try with sudo\n"
+                    "   - Service not found → check if installed, install first\n"
+                    "   - Command not found → try alternative command (e.g. systemctl vs service vs brew services)\n"
+                    "   - Port in use → find and show the conflicting process\n"
+                    "4. Do NOT retry the exact same command that failed!\n"
+                    "5. If recovery is impossible, use chat.respond to explain the situation and suggest manual steps."
+                )
+                parts.append("")
             # 当已有 shell 执行结果时，强制要求 LLM 用 chat.respond 总结
-            if has_shell_result:
+            elif has_shell_result:
                 parts.append(
                     "IMPORTANT: The command above has ALREADY been executed. "
                     "Do NOT run it again. You MUST now use chat.respond to summarize "

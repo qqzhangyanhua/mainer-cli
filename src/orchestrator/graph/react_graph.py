@@ -217,6 +217,7 @@ class ReactGraph:
             "needs_approval": False,
             "approval_granted": False,
             "is_error": False,
+            "error_recovery_count": 0,
         }
 
         config = {"configurable": {"thread_id": session_id or "default"}}

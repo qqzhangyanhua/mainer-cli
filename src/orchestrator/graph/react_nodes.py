@@ -540,19 +540,46 @@ class ReactNodes:
         }
 
     async def check_node(self, state: ReactState) -> dict[str, object]:
-        """检查节点：判断任务是否完成"""
+        """检查节点：判断任务是否完成
+
+        关键设计：命令执行失败（exit code != 0）属于可恢复错误，
+        应回到 reason_node 让 LLM 分析错误并尝试替代方案，
+        而非直接终止。仅系统级错误（如 unknown worker）才是致命错误。
+        """
         result_dict = state.get("worker_result", {})
         task_completed = bool(result_dict.get("task_completed", False))
         success = bool(result_dict.get("success", False))
+        iteration = state.get("iteration", 0) + 1
+        max_iterations = state.get("max_iterations", 5)
 
         if not success:
+            # 判断是否为可恢复错误（命令执行失败，而非系统级错误）
+            data = result_dict.get("data")
+            is_command_failure = (
+                isinstance(data, dict) and "exit_code" in data
+            )
+
+            recovery_count = int(state.get("error_recovery_count", 0))
+            max_recovery = 2  # 最多尝试 2 次错误恢复
+
+            if is_command_failure and recovery_count < max_recovery and iteration < max_iterations:
+                # 可恢复：回到 reason_node，让 LLM 看到失败原因并尝试替代方案
+                self._report_progress(
+                    "recovery",
+                    f"命令执行失败，尝试替代方案 ({recovery_count + 1}/{max_recovery})...",
+                )
+                return {
+                    "iteration": iteration,
+                    "error_recovery_count": recovery_count + 1,
+                    "task_completed": False,
+                    "is_error": False,
+                }
+
+            # 不可恢复或恢复次数耗尽：终止
             return {
                 "is_error": True,
                 "error_message": str(result_dict.get("message", "Unknown error")),
             }
-
-        iteration = state.get("iteration", 0) + 1
-        max_iterations = state.get("max_iterations", 5)
 
         if task_completed:
             return {

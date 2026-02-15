@@ -45,6 +45,9 @@ class ReactState(TypedDict, total=False):
     task_completed: bool
     is_error: bool
 
+    # 错误恢复
+    error_recovery_count: int  # 命令失败后回循环重试的次数
+
     # 输出
     final_message: str
     error_message: str
