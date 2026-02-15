@@ -12,7 +12,7 @@ from src.types import Instruction, RiskLevel
 DANGER_PATTERNS: dict[str, list[str]] = {
     "high": [
         "rm -rf",
-        "kill -9",
+        "kill",
         "mkfs",  # 磁盘格式化
         "dd if=",
         "> /dev/",
@@ -24,7 +24,6 @@ DANGER_PATTERNS: dict[str, list[str]] = {
     ],
     "medium": [
         "rm ",
-        "kill",
         "docker rm",
         "docker stop",
         "systemctl stop",
