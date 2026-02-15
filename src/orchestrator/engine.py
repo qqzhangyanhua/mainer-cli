@@ -321,6 +321,10 @@ class OrchestratorEngine:
             if final_state.get("needs_approval") and not final_state.get("approval_granted"):
                 return "__APPROVAL_REQUIRED__"
 
+            # 检查是否有权限错误建议命令
+            if final_state.get("suggested_commands"):
+                return "__SUGGESTED_COMMANDS__"
+
             # 更新会话历史
             if session_history is not None:
                 parsed = self._parse_graph_messages(final_state.get("messages", []))
@@ -355,6 +359,10 @@ class OrchestratorEngine:
 
             if final_state.get("needs_approval") and not final_state.get("approval_granted"):
                 return "__APPROVAL_REQUIRED__"
+
+            # 检查是否有权限错误建议命令
+            if final_state.get("suggested_commands"):
+                return "__SUGGESTED_COMMANDS__"
 
             # 更新会话历史
             if session_history is not None:

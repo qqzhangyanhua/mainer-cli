@@ -400,7 +400,7 @@ Output format:
                     "1. Identify the root cause (permission denied? not installed? wrong syntax?)\n"
                     "2. Try an ALTERNATIVE approach to accomplish the same goal\n"
                     "3. Common recovery strategies:\n"
-                    "   - Permission error → try with sudo\n"
+                    "   - Permission error -> DO NOT retry with sudo (blocked). The system will auto-generate a suggested command for the user.\n"
                     "   - Service not found → check if installed, install first\n"
                     "   - Command not found → try alternative command (e.g. systemctl vs service vs brew services)\n"
                     "   - Port in use → find and show the conflicting process\n"

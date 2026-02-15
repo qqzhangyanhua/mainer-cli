@@ -286,3 +286,96 @@ class UserChoiceScreen(ModalScreen[str]):
                 self._show_custom_input()
             else:
                 self.dismiss(selected)
+
+
+class SuggestedCommandScreen(ModalScreen[bool]):
+    """建议命令弹窗 — 权限不足时展示 sudo 命令供用户复制"""
+
+    CSS = """
+    SuggestedCommandScreen {
+        align: center middle;
+    }
+
+    #suggest-dialog {
+        width: 70%;
+        max-width: 80;
+        border: heavy $warning;
+        padding: 1 2;
+        background: $surface;
+    }
+
+    #suggest-title {
+        text-style: bold;
+        color: $warning;
+        margin-bottom: 1;
+    }
+
+    #suggest-message {
+        margin-bottom: 1;
+    }
+
+    #suggest-commands {
+        border: heavy $primary;
+        padding: 1;
+        margin: 1 0;
+        background: $panel;
+        height: auto;
+    }
+
+    #suggest-hint {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+
+    #suggest-buttons {
+        height: auto;
+        align: center middle;
+    }
+    """
+
+    BINDINGS = [
+        Binding("c", "copy_cmd", "Copy"),
+        Binding("enter", "close", "Close"),
+        Binding("escape", "close", "Close"),
+    ]
+
+    def __init__(self, commands: list[str], message: str) -> None:
+        super().__init__()
+        self._commands = commands
+        self._message = message
+
+    def compose(self) -> ComposeResult:
+        cmd_text = "\n".join(self._commands)
+
+        with Vertical(id="suggest-dialog"):
+            yield Static("权限不足", id="suggest-title")
+            yield Static(self._message, id="suggest-message")
+            syntax = Syntax(cmd_text, "bash", theme="ansi_dark", word_wrap=True)
+            yield Static(syntax, id="suggest-commands")
+            yield Static("快捷键: c 复制命令, Enter/Esc 关闭", id="suggest-hint")
+            with Horizontal(id="suggest-buttons"):
+                yield Button("复制命令", id="suggest-copy")
+                yield Button("关闭", id="suggest-close")
+
+    def on_mount(self) -> None:
+        self.query_one("#suggest-close", Button).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "suggest-copy":
+            self._do_copy()
+        else:
+            self.dismiss(True)
+
+    def action_copy_cmd(self) -> None:
+        self._do_copy()
+
+    def action_close(self) -> None:
+        self.dismiss(True)
+
+    def _do_copy(self) -> None:
+        text = "\n".join(self._commands)
+        try:
+            self.app.copy_to_clipboard(text)
+        except (AttributeError, Exception):
+            pass
+        self.dismiss(True)

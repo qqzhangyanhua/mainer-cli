@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Callable, Optional
 
 from pydantic import ValidationError
@@ -15,6 +16,19 @@ from src.orchestrator.safety import check_safety
 from src.orchestrator.validation import validate_instruction
 from src.types import ConversationEntry, Instruction, RiskLevel, WorkerResult
 from src.workers.base import BaseWorker
+
+# 权限错误匹配模式（不区分大小写）
+PERMISSION_ERROR_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"permission denied", re.IGNORECASE),
+    re.compile(r"operation not permitted", re.IGNORECASE),
+    re.compile(r"requires? root", re.IGNORECASE),
+    re.compile(r"must be run as root", re.IGNORECASE),
+    re.compile(r"access denied", re.IGNORECASE),
+    re.compile(r"EACCES", re.IGNORECASE),
+    re.compile(r"insufficient permissions?", re.IGNORECASE),
+    re.compile(r"not permitted to", re.IGNORECASE),
+    re.compile(r"run .*as administrator", re.IGNORECASE),
+]
 
 
 class ReactNodes:
@@ -66,6 +80,22 @@ class ReactNodes:
             "high": 2,
         }
         return ranks[risk]
+
+    @staticmethod
+    def _detect_permission_error(data: dict[str, object]) -> bool:
+        """检查命令输出中是否包含权限错误关键词"""
+        stderr = str(data.get("stderr", ""))
+        stdout = str(data.get("stdout", ""))
+        combined = f"{stderr} {stdout}"
+        return any(pattern.search(combined) for pattern in PERMISSION_ERROR_PATTERNS)
+
+    @staticmethod
+    def _build_sudo_command(command: str) -> str:
+        """在原命令前加 sudo，避免重复"""
+        stripped = command.strip()
+        if stripped.startswith("sudo "):
+            return stripped
+        return f"sudo {stripped}"
 
     def _report_progress(self, step: str, message: str) -> None:
         """报告进度"""
@@ -558,6 +588,28 @@ class ReactNodes:
             is_command_failure = (
                 isinstance(data, dict) and "exit_code" in data
             )
+
+            # 权限错误检测：跳过恢复循环，直接建议 sudo 命令
+            if is_command_failure and isinstance(data, dict) and self._detect_permission_error(data):
+                original_cmd = str(data.get("command", ""))
+                if original_cmd:
+                    sudo_cmd = self._build_sudo_command(original_cmd)
+                    message = str(result_dict.get("message", ""))
+                    final_msg = (
+                        f"权限不足，无法自动执行。请手动运行以下命令：\n\n"
+                        f"  {sudo_cmd}\n\n"
+                        f"原始错误：{message}"
+                    )
+                    self._report_progress(
+                        "recovery",
+                        f"检测到权限错误，生成建议命令: {sudo_cmd}",
+                    )
+                    return {
+                        "task_completed": True,
+                        "is_error": False,
+                        "suggested_commands": [sudo_cmd],
+                        "final_message": final_msg,
+                    }
 
             recovery_count = int(state.get("error_recovery_count", 0))
             max_recovery = 2  # 最多尝试 2 次错误恢复

@@ -45,7 +45,7 @@ from src.tui.commands import (
     show_history_summary,
     show_log_analysis,
 )
-from src.tui.screens import ConfirmationScreen, UserChoiceScreen
+from src.tui.screens import ConfirmationScreen, SuggestedCommandScreen, UserChoiceScreen
 from src.tui.widgets import (
     HistoryWriter,
     SlashCommandSuggester,
@@ -440,6 +440,29 @@ class OpsAIApp(App[str]):
             input_widget.disabled = False
             input_widget.focus()
 
+    async def _show_suggested_commands(self, commands: list[str], message: str) -> None:
+        """弹出建议命令弹窗，供用户复制手动执行"""
+        input_widget = self.query_one("#user-input", Input)
+        input_widget.disabled = True
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[bool] = loop.create_future()
+
+        def _on_dismissed(result: bool | None) -> None:
+            if not future.done():
+                future.set_result(bool(result))
+
+        self.call_later(
+            lambda: self.push_screen(
+                SuggestedCommandScreen(commands, message), _on_dismissed
+            )
+        )
+        try:
+            await future
+        finally:
+            input_widget.disabled = False
+            input_widget.focus()
+
     # ── Loading 状态 ──────────────────────────────────────
 
     def _on_progress(self, step: str, message: str) -> None:
@@ -546,6 +569,19 @@ class OpsAIApp(App[str]):
                     approval_granted=approved,
                     session_history=self._session_history,
                 )
+
+            # 处理权限不足建议命令
+            if result == "__SUGGESTED_COMMANDS__":
+                self._hide_loading()
+                state = self._engine.get_graph_state(session_id)
+                if state:
+                    commands = state.get("suggested_commands", [])
+                    final_msg = state.get("final_message", "")
+                    if isinstance(commands, list) and commands:
+                        await self._show_suggested_commands(commands, final_msg)
+                    result = final_msg or "权限不足，请查看建议命令"
+                else:
+                    result = "权限不足，但状态缺失"
 
             self._last_output = result
             self._render_result(result)

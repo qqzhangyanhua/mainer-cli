@@ -504,3 +504,128 @@ class TestCheckNodeErrorRecovery:
 
         # max_iterations 达到，不再恢复
         assert result.get("is_error") is True
+
+
+class TestPermissionErrorDetection:
+    """权限错误检测与建议命令测试"""
+
+    @pytest.fixture
+    def mock_llm(self) -> MockLLMClient:
+        return MockLLMClient()
+
+    @pytest.fixture
+    def workers(self) -> dict[str, BaseWorker]:
+        return {
+            "system": SystemWorker(),
+            "audit": AuditWorker(),
+        }
+
+    @pytest.fixture
+    def context(self) -> EnvironmentContext:
+        return EnvironmentContext()
+
+    @pytest.fixture
+    def nodes(
+        self,
+        mock_llm: MockLLMClient,
+        workers: dict[str, BaseWorker],
+        context: EnvironmentContext,
+    ) -> ReactNodes:
+        return ReactNodes(
+            llm_client=mock_llm,
+            workers=workers,
+            context=context,
+            dry_run=False,
+            max_risk="high",
+            auto_approve_safe=True,
+            require_dry_run_for_high_risk=False,
+        )
+
+    def test_detect_permission_denied_in_stderr(self) -> None:
+        """stderr 含 'Permission denied' 应被检测"""
+        data: dict[str, object] = {
+            "stderr": "Error: Permission denied",
+            "stdout": "",
+        }
+        assert ReactNodes._detect_permission_error(data) is True
+
+    def test_detect_operation_not_permitted(self) -> None:
+        """stderr 含 'Operation not permitted' 应被检测"""
+        data: dict[str, object] = {
+            "stderr": "nginx: Operation not permitted",
+            "stdout": "",
+        }
+        assert ReactNodes._detect_permission_error(data) is True
+
+    def test_no_false_positive(self) -> None:
+        """'No such file or directory' 不应误判为权限错误"""
+        data: dict[str, object] = {
+            "stderr": "No such file or directory",
+            "stdout": "",
+        }
+        assert ReactNodes._detect_permission_error(data) is False
+
+    def test_build_sudo_command(self) -> None:
+        """正确加 sudo 前缀，不重复"""
+        assert ReactNodes._build_sudo_command("nginx -t") == "sudo nginx -t"
+        assert ReactNodes._build_sudo_command("sudo nginx -t") == "sudo nginx -t"
+        assert ReactNodes._build_sudo_command("  systemctl restart nginx") == "sudo systemctl restart nginx"
+
+    @pytest.mark.asyncio
+    async def test_check_node_permission_error_sets_suggested_commands(
+        self, nodes: ReactNodes
+    ) -> None:
+        """权限错误 → task_completed=True + suggested_commands"""
+        state = {
+            "worker_result": {
+                "success": False,
+                "message": "Command failed: systemctl restart nginx",
+                "data": {
+                    "command": "systemctl restart nginx",
+                    "exit_code": 1,
+                    "stdout": "",
+                    "stderr": "Failed to restart nginx.service: Permission denied",
+                },
+                "task_completed": False,
+            },
+            "iteration": 0,
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        assert result.get("task_completed") is True
+        assert result.get("is_error") is False
+        assert result.get("suggested_commands") == ["sudo systemctl restart nginx"]
+        assert "权限不足" in str(result.get("final_message", ""))
+
+    @pytest.mark.asyncio
+    async def test_check_node_non_permission_error_still_recovers(
+        self, nodes: ReactNodes
+    ) -> None:
+        """非权限错误仍走正常恢复循环"""
+        state = {
+            "worker_result": {
+                "success": False,
+                "message": "Command failed: nginx -t",
+                "data": {
+                    "command": "nginx -t",
+                    "exit_code": 1,
+                    "stdout": "",
+                    "stderr": "nginx: configuration file test failed",
+                },
+                "task_completed": False,
+            },
+            "iteration": 0,
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        # 非权限错误应走恢复逻辑
+        assert result.get("is_error", False) is False
+        assert result.get("task_completed") is False
+        assert result.get("error_recovery_count") == 1
+        assert result.get("suggested_commands") is None
