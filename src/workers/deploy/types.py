@@ -118,11 +118,11 @@ README:
     {{"description": "启动 Docker Desktop", "command": "open -a Docker", "risk_level": "medium"}},
     {{"description": "检查 Docker 是否就绪", "command": "docker info", "risk_level": "safe"}},
     {{"description": "创建 .env 文件（SECRET_KEY）", "command": "echo SECRET_KEY=$(openssl rand -hex 32) > .env", "risk_level": "safe"}},
-    {{"description": "添加 LOGIN_PASSWORD", "command": "echo LOGIN_PASSWORD=admin123 >> .env", "risk_level": "safe"}},
+    {{"description": "添加 LOGIN_PASSWORD", "command": "echo LOGIN_PASSWORD=$(openssl rand -base64 12) >> .env", "risk_level": "safe"}},
     {{"description": "构建镜像", "command": "docker build -t myapp .", "risk_level": "safe"}},
     {{"description": "运行容器", "command": "docker run -d --name myapp -p 5000:5000 --env-file .env myapp", "risk_level": "safe"}}
   ],
-  "notes": "自动生成了 SECRET_KEY，LOGIN_PASSWORD 使用默认值 admin123"
+  "notes": "自动生成了 SECRET_KEY 和 LOGIN_PASSWORD（随机密码）"
 }}
 
 注意：
@@ -167,7 +167,9 @@ DIAGNOSE_ERROR_PROMPT = """命令执行失败。你是一个智能运维专家�
   * 或使用：`openssl rand -hex 32`
 - 如果是密码类变量（PASSWORD、LOGIN_PASSWORD）：
   * 检查 .env.example 是否有默认值
-  * 或使用通用默认值：admin123
+  * 自动生成：`python -c 'import secrets; print(secrets.token_urlsafe(12))'`
+  * 或使用：`openssl rand -base64 12`
+  * NEVER use hardcoded passwords like admin123!
 - 如果是配置类变量（DATABASE_URL、API_ENDPOINT）：
   * 检查 .env.example 或 README
   * 或询问用户
@@ -181,7 +183,7 @@ DIAGNOSE_ERROR_PROMPT = """命令执行失败。你是一个智能运维专家�
 
 **端口被占用 (address already in use / port already in use)**
 - 不要再次诊断端口占用！直接修改命令使用新端口
-- 如果原端口是 5000，改用 5001；如果是 3000，改用 3001
+- 端口冲突时，原端口 +1 作为替代（如 5000→5001, 3000→3001）
 - action 选择 "fix"，直接生成使用新端口的命令
 
 **容器名称冲突 (container name already in use)**
