@@ -159,7 +159,88 @@ class AnalyzeWorker(BaseWorker):
                 task_completed=False,
             )
 
-        # 检查是否有实质性数据（排除失败和无匹配结果）
+        # 特殊处理端口类型：检查是否有端口开放的证据
+        if type_str == "port":
+            # 关键词优先级：succeeded > refused/failed
+            # 因为nc可能同时输出两者（IPv6失败，IPv4成功）
+            has_port_open_evidence = False
+            has_port_closed_evidence = False
+
+            for cmd, output in collected_info.items():
+                # 跳过失败的命令输出（以[Failed:开头）
+                if output.startswith("[Failed:"):
+                    # 检查失败信息中的关闭证据
+                    output_lower = output.lower()
+                    if "connection refused" in output_lower:
+                        has_port_closed_evidence = True
+                    continue
+
+                # 提取实际输出内容（排除命令名称部分）
+                # 格式: "Command: xxx\nOutput:\n...\nExit code: N"
+                # 或: "Command: xxx\nStderr:\n...\nExit code: N"
+                actual_output = output
+                if "Output:\n" in output:
+                    actual_output = output.split("Output:\n", 1)[1]
+                elif "Stderr:\n" in output:
+                    actual_output = output.split("Stderr:\n", 1)[1]
+
+                # 检查实际输出中的成功标识
+                actual_lower = actual_output.lower()
+                if "succeeded" in actual_lower or actual_output.startswith("HTTP/"):
+                    has_port_open_evidence = True
+                    break  # 找到成功证据，立即确定端口开放
+
+                # 检查lsof/ss的LISTEN状态（但不匹配命令名中的LISTEN）
+                if ("LISTEN" in actual_output and "lsof" not in cmd) or (
+                    "ESTABLISHED" in actual_output and len(actual_output.strip()) > 50
+                ):
+                    has_port_open_evidence = True
+                    break
+
+            # 只有在没有成功证据时，才基于失败证据判断
+            if not has_port_open_evidence:
+                for cmd, output in collected_info.items():
+                    # 检查所有输出中的关闭证据
+                    output_lower = output.lower()
+                    if "connection refused" in output_lower or (
+                        "(no matches found)" in output_lower and "lsof" in cmd.lower()
+                    ):
+                        has_port_closed_evidence = True
+                        break
+
+            # 检查是否有进程信息（lsof/ss的有效输出）
+            has_process_info = any(
+                not output.startswith("[Failed:")
+                and "(no matches found)" not in output
+                and "connection refused" not in output.lower()
+                and "failed" not in output.lower()
+                and output.strip()
+                and len(output.strip()) > 20  # 有实质内容，不只是命令名
+                for cmd, output in collected_info.items()
+                if any(proc_cmd in cmd for proc_cmd in ["lsof", "ss ", "netstat"])
+            )
+
+            # 端口开放但没有进程信息 = 权限问题
+            if has_port_open_evidence and not has_process_info:
+                return WorkerResult(
+                    success=True,
+                    message=(
+                        f"端口 {target_str} 有服务在监听（连接测试成功），"
+                        f"但无法查看进程详情（可能需要 sudo 权限）。\n"
+                        f"建议使用: sudo lsof -i :{target_str}"
+                    ),
+                    task_completed=True,
+                )
+
+            # 端口关闭（明确的关闭证据或没有开放证据）
+            if has_port_closed_evidence or not has_port_open_evidence:
+                return WorkerResult(
+                    success=True,
+                    message=f"端口 {target_str} 当前没有服务在监听（端口关闭）。",
+                    task_completed=True,
+                )
+
+        # 通用检查：是否有实质性数据（排除失败和无匹配结果）
         has_meaningful_data = any(
             not output.startswith("[Failed:")
             and "(no matches found)" not in output
@@ -168,12 +249,6 @@ class AnalyzeWorker(BaseWorker):
         )
         if not has_meaningful_data:
             no_data_msg = f"未检测到 {target_str} 相关信息。"
-            if type_str == "port":
-                no_data_msg += (
-                    f"\n端口 {target_str} 当前没有进程在监听。"
-                    f"\n如果你确认该端口可以访问，可能需要 root 权限查看，"
-                    f"或服务绑定在特定网络接口上。"
-                )
             return WorkerResult(
                 success=True,
                 message=no_data_msg,

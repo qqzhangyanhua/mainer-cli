@@ -19,7 +19,9 @@
       "Bash(wc:*)",
       "Bash(python3:*)",
       "Bash(python3 -m pytest:*)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(grep:*)",
+      "Bash(nginx -T:*)"
     ]
   }
 }

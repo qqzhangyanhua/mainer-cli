@@ -1,5 +1,7 @@
 """Prompt 模板管理"""
 
+# ruff: noqa: E501  # Prompt templates contain long lines for readability
+
 from __future__ import annotations
 
 from typing import Optional
@@ -42,7 +44,7 @@ class PromptBuilder:
         "http": ["fetch_url", "fetch_github_readme", "list_github_files"],
         "deploy": ["deploy"],  # 简化：只暴露一键部署
         "git": ["clone", "pull", "status"],  # Git 操作（显式路径优先）
-        "monitor": ["snapshot", "check_port", "check_http", "check_process", "top_processes"],
+        "monitor": ["snapshot", "check_port", "check_http", "check_process", "top_processes", "find_service_port"],
         "log_analyzer": ["analyze_lines", "analyze_file", "analyze_container"],
         "remote": ["execute", "list_hosts", "test_connection"],
         "compose": ["status", "health", "logs", "restart", "up", "down"],
@@ -98,6 +100,30 @@ Worker Details:
   - You can execute ANY reasonable ops command. The system has an intelligent risk analyzer
     that automatically evaluates command safety. Do NOT limit yourself to a predefined list.
   - CRITICAL: Use FULL commands to show complete information
+   - ⚠️⚠️⚠️ NEVER USE DEFAULT PORTS IN COMMANDS! Extract ACTUAL port from user input or context!
+    * User mentions "nginx on 8080" → use 8080 in commands (NOT default 80!)
+    * User mentions "redis on 6380" → use 6380 (NOT default 6379!)
+    * If port unknown → MUST detect actual port FIRST (see SERVICE OPERATION WORKFLOW below)
+  - ⭐⭐⭐ SERVICE OPERATION WORKFLOW (重启/停止/关闭服务时必须先探测端口!!!):
+    * When user asks to restart/kill/stop a service BY NAME (e.g. "重启nginx", "关闭redis", "停止postgres")
+      WITHOUT specifying a port number, you MUST follow this workflow:
+    * Step 1 - DETECT: First find the actual listening port of the service:
+      - Use monitor.find_service_port: {{"worker": "monitor", "action": "find_service_port", "args": {{"name": "nginx"}}, "risk_level": "safe"}}
+      - This returns the actual PID(s) and port(s) the service is listening on
+    * Step 2 - CONFIRM: Review the detection result:
+      - If found (e.g. nginx on PID 1234, port 8080) → proceed with the actual port
+      - If multiple ports found → ask user which one to operate on
+      - If not found → inform user the service is not running
+    * Step 3 - EXECUTE: Use the detected port for the operation:
+      - Kill: lsof -ti :<DETECTED_PORT> | xargs kill -9
+      - Restart: kill + start with detected port
+    * Step 4 - VERIFY: Confirm the operation succeeded (see Rule 0.5)
+    * ⚠️ NEVER skip Step 1! NEVER assume default ports!
+    * Examples:
+      - User: "重启nginx" → Step 1: monitor.find_service_port name=nginx → finds port 8080
+        → Step 2: lsof -ti :8080 | xargs kill -9 (NOT port 80!)
+      - User: "关闭redis" → Step 1: monitor.find_service_port name=redis → finds port 6380
+        → Step 2: lsof -ti :6380 | xargs kill -9 (NOT port 6379!)
   - ⚠️ OS-SPECIFIC COMMANDS (check Current Environment above!):
     * Kill process on port:
       - macOS/Darwin: lsof -ti :<PORT> | xargs kill -9
@@ -168,6 +194,13 @@ Worker Details:
   - args: {{"sort_by": "cpu"}} 或 {{"sort_by": "memory"}}, 可选 {{"limit": 10}}
   - risk_level: safe
   - 示例: {{"worker": "monitor", "action": "top_processes", "args": {{"sort_by": "cpu", "limit": 10}}, "risk_level": "safe"}}
+
+- monitor.find_service_port: ⭐ 按服务名查找实际监听端口（重启/停止服务前必须先调用!!!）
+  - args: {{"name": "<service_name>"}} 如 "nginx", "redis", "postgres", "node", "python"
+  - risk_level: safe
+  - 返回: 服务的 PID、监听端口、监听地址
+  - ⚠️ 当用户要求重启/停止/关闭某个服务但未指定端口时，必须先调用此 action!
+  - 示例: {{"worker": "monitor", "action": "find_service_port", "args": {{"name": "nginx"}}, "risk_level": "safe"}}
 
 - log_analyzer.analyze_container: 分析容器日志（本地预处理 + 统计）
   - args: {{"container": "容器名或ID"}} 可选 {{"tail": 500, "top_n": 10}}
@@ -280,9 +313,35 @@ CRITICAL Rules:
        → Step 2: chat.respond with actual disk usage numbers from output
      * User: "当前目录有什么文件" → Step 1: shell.execute_command "ls -la"
        → Step 2: chat.respond with summary of files/folders found
-   - For action commands (kill, restart, stop, start, rm, etc.), also summarize:
-     * "已成功重启 xxx 服务" or "端口 xxxx 的进程已被终止"
-0.5. ⭐⭐⭐ VERIFY BEFORE ANSWERING (验证优先于回答!!!):
+   - For query commands (ls, ps, df, etc.), summarize the findings
+   - For action commands (kill, restart, stop, etc.), MUST verify result before summarizing (see Rule 0.5)
+0.5. ⭐⭐⭐ POST-ACTION VERIFICATION (操作后必须验证结果!!!):
+   - ⚠️ CRITICAL: After executing destructive/modifying operations, you MUST verify the result!
+   - NEVER assume success — always check the actual system state!
+   - Operations requiring verification:
+     * kill/stop/restart service → check with: lsof/ps/curl to verify port/process status
+     * docker stop/rm → check with: docker ps to verify container is gone
+     * file deletion (rm) → check with: ls to verify file is removed
+     * service start → check with: systemctl status / docker ps / curl to verify it's running
+   - Workflow for kill/stop operations:
+     Step 1: Execute kill command (e.g., lsof -ti :8080 | xargs kill -9)
+     Step 2: IMMEDIATELY verify with appropriate check command:
+       * Port-based kill → lsof -iTCP:<PORT> -sTCP:LISTEN -P -n AND curl -sI http://localhost:<PORT>
+       * Process kill → ps aux | grep <PROCESS_NAME>
+       * Docker stop → docker ps | grep <CONTAINER_NAME>
+     Step 3: Based on verification result, report:
+       * If verification confirms success → "已成功终止端口 <PORT> 的服务（已验证端口关闭）"
+       * If service still running → "终止命令已执行，但服务仍在运行（可能需要 sudo 或使用其他方法）"
+   - Example (CORRECT):
+     User: "关闭8080端口的nginx"
+     → Step 1: {{"worker": "shell", "action": "execute_command", "args": {{"command": "lsof -ti :8080 | xargs kill -9"}}, "risk_level": "high"}}
+     → Step 2: {{"worker": "shell", "action": "execute_command", "args": {{"command": "lsof -iTCP:8080 -sTCP:LISTEN -P -n"}}, "risk_level": "safe"}}
+     → Step 3: {{"worker": "shell", "action": "execute_command", "args": {{"command": "curl -sI http://localhost:8080 --max-time 3"}}, "risk_level": "safe"}}
+     → Step 4: {{"worker": "chat", "action": "respond", "args": {{"message": "基于验证结果的总结"}}, "risk_level": "safe"}}
+   - Example (WRONG):
+     → Step 1: kill command
+     → Step 2: chat.respond "已成功终止" ← WRONG! No verification!
+0.5.1. ⭐⭐⭐ VERIFY WHEN USER CHALLENGES (用户质疑时必须验证!!!):
    - When user CHALLENGES, CONTRADICTS, or QUESTIONS a previous result, you MUST run a new command to verify!
    - NEVER assume or guess based on previous context — always check the actual system state!
    - Trigger phrases: "还能访问", "还在运行", "不对", "没生效", "但是", "可是", "怎么还", "为什么还"
@@ -337,6 +396,19 @@ CRITICAL Rules:
      * Use PORT-BASED command: lsof -ti :<PORT> | xargs kill -9 (targets ONLY that port)
      * Do NOT use service-level commands (nginx -s stop, brew services stop) — they affect ALL ports!
      * The port number from the previous conversation IS the primary identifier, not the service name
+   - ⚠️⚠️⚠️ CRITICAL: NEVER USE DEFAULT PORTS! (绝对禁止使用默认端口!!!):
+     * When user mentions a service (nginx/redis/postgres/etc.), DO NOT assume its default port!
+     * User: "重启nginx容器" + context shows nginx on 8080 → use port 8080 (NOT 80!)
+     * User: "关闭redis服务" + context shows redis on 6380 → use port 6380 (NOT 6379!)
+     * User: "停止postgres" + context shows postgres on 5433 → use port 5433 (NOT 5432!)
+     * If port number is NOT explicitly mentioned in current or previous messages:
+       - Option 1 (⭐PREFERRED): Use monitor.find_service_port to detect actual port!
+         {{"worker": "monitor", "action": "find_service_port", "args": {{"name": "nginx"}}, "risk_level": "safe"}}
+       - Option 2: Search previous Output for port info (lsof, docker ps -p, netstat output)
+       - Option 3: Ask user: chat.respond "请明确指定要操作的端口号"
+       - ⚠️ NEVER use pkill/killall as first choice — always try to detect port first!
+     * Common default ports you MUST NOT assume:
+       nginx=80, redis=6379, postgres=5432, mysql=3306, mongodb=27017
    - Example: If docker ps output shows "compoder-mongo", and user says "这个是干嘛的" → target = "compoder-mongo" (NOT "这个"!)
    - Example: If output shows only ONE item, and user says "只有一个，这个是干嘛的" → use that ONE item's name
    - If user says "我只有一个docker服务" WITHOUT previous output → first run docker ps, then analyze
@@ -361,6 +433,12 @@ User: "查看内存占用" or "内存占用情况" or "列出10个内存占用�
 Step 1 (macOS): {{"worker": "shell", "action": "execute_command", "args": {{"command": "ps aux | sort -nrk 4 | head -n 11"}}, "risk_level": "safe"}}
 Step 1 (Linux): {{"worker": "shell", "action": "execute_command", "args": {{"command": "ps aux --sort=-%mem | head -n 11"}}, "risk_level": "safe"}}
 Step 2 (after seeing output): {{"worker": "chat", "action": "respond", "args": {{"message": "<summarize actual top processes from output with PID, name, memory usage>"}}, "risk_level": "safe"}}
+
+User: "重启nginx" or "关闭redis" (service name WITHOUT port number)
+Step 1: {{"worker": "monitor", "action": "find_service_port", "args": {{"name": "nginx"}}, "risk_level": "safe"}}
+Step 2 (after seeing output, e.g. port=8080): {{"worker": "shell", "action": "execute_command", "args": {{"command": "lsof -ti :8080 | xargs kill -9"}}, "risk_level": "high"}}
+Step 3 (verify): {{"worker": "shell", "action": "execute_command", "args": {{"command": "lsof -iTCP:8080 -sTCP:LISTEN -P -n"}}, "risk_level": "safe"}}
+Step 4: {{"worker": "chat", "action": "respond", "args": {{"message": "已成功关闭运行在 8080 端口的 nginx 服务（已验证端口关闭）"}}, "risk_level": "safe"}}
 
 User: "怎么安装nginx" or "帮我安装xxx"
 Step 1: {{"worker": "shell", "action": "execute_command", "args": {{"command": "<appropriate install command for current OS>"}}, "risk_level": "medium"}}
@@ -414,6 +492,7 @@ Output format:
         if history:
             has_shell_result = False
             has_failed_command = False
+            failed_commands = []  # 追踪失败的命令
             parts.append("Previous actions and results:")
             for entry in history:
                 if entry.user_input:
@@ -421,6 +500,12 @@ Output format:
 
                 parts.append(f"  Action: {entry.instruction.worker}.{entry.instruction.action}")
                 parts.append(f"  Result: {entry.result.message}")
+
+                # 记录失败的shell命令
+                if entry.instruction.worker == "shell" and not entry.result.success:
+                    cmd = entry.instruction.args.get("command", "")
+                    if cmd:
+                        failed_commands.append(str(cmd))
                 # 传递完整输出用于 LLM 分析（如果存在）
                 raw_output = get_raw_output(entry.result)
                 if raw_output:
@@ -437,17 +522,25 @@ Output format:
 
             # 命令失败时：要求 LLM 分析错误并尝试替代方案
             if has_failed_command:
+                failed_list = "\n".join(f"   ✗ {cmd}" for cmd in failed_commands)
                 parts.append(
-                    "IMPORTANT: The previous command FAILED. Analyze the error message carefully and:\n"
-                    "1. Identify the root cause (permission denied? not installed? wrong syntax?)\n"
-                    "2. Try an ALTERNATIVE approach to accomplish the same goal\n"
-                    "3. Common recovery strategies:\n"
-                    "   - Permission error -> DO NOT retry with sudo (blocked). The system will auto-generate a suggested command for the user.\n"
+                    f"IMPORTANT: The previous command FAILED. Already tried commands:\n{failed_list}\n\n"
+                    "Analyze the error message carefully and:\n"
+                    "1. Identify the root cause (permission denied? not installed? wrong syntax? no such process?)\n"
+                    "2. ⚠️ SPECIAL CASE - Kill/Stop operations failed:\n"
+                    "   - If kill/stop/pkill command failed → DO NOT retry different kill variants!\n"
+                    "   - Likely cause: process owned by another user (root/system)\n"
+                    "   - Action: Use chat.respond to explain and suggest: 'sudo <original_command>'\n"
+                    "   - Example: kill -9 <PID> failed → suggest 'sudo kill -9 <PID>'\n"
+                    "   - Example: lsof -ti :8080 | xargs kill -9 failed → suggest 'sudo lsof -ti :8080 | xargs sudo kill -9'\n"
+                    "   - Never retry with: pkill, killall, or other kill commands — they will also fail!\n"
+                    "3. For other failures, try an ALTERNATIVE approach:\n"
+                    "   - Permission error (non-kill) → system will auto-generate sudo suggestion\n"
                     "   - Service not found → check if installed, install first\n"
-                    "   - Command not found → try alternative command (e.g. systemctl vs service vs brew services)\n"
+                    "   - Command not found → try alternative (systemctl vs service vs brew services)\n"
                     "   - Port in use → find and show the conflicting process\n"
-                    "4. Do NOT retry the exact same command that failed!\n"
-                    "5. If recovery is impossible, use chat.respond to explain the situation and suggest manual steps."
+                    "4. Do NOT retry the EXACT SAME command or minor variants that will fail for the same reason!\n"
+                    "5. If no alternative exists, use chat.respond to explain and suggest manual steps (including sudo if needed)."
                 )
                 parts.append("")
             # 当已有 shell 执行结果时，根据用户新输入决定行为
@@ -464,6 +557,29 @@ Output format:
                 parts.append("")
 
         parts.append(f"User request: {user_input}")
+
+        # 检测用户输入中的端口号并强调
+        import re
+
+        # 多种模式匹配端口号
+        port_patterns = [
+            r"(\d{1,5})\s*(?:端口|port)",  # 8080端口, 8080 port
+            r"(?:端口|port)\s*(\d{1,5})",  # 端口8080, port 8080
+            r":\s*(\d{1,5})",  # :8080
+            r"(?:在|on)\s*(\d{1,5})",  # 在8080, on 8080
+        ]
+        port_mentions = []
+        for pattern in port_patterns:
+            port_mentions.extend(re.findall(pattern, user_input, re.IGNORECASE))
+
+        if port_mentions:
+            unique_ports = sorted(set(port_mentions))
+            parts.append("")
+            parts.append(
+                f"⚠️⚠️⚠️ CRITICAL PORT INFO EXTRACTED FROM USER INPUT: {', '.join(unique_ports)}"
+            )
+            parts.append("You MUST use these EXACT port numbers in your commands!")
+            parts.append("DO NOT use any default port numbers (80, 443, 6379, 3306, 5432, etc.)!")
 
         return "\n".join(parts)
 

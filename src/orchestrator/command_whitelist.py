@@ -157,7 +157,12 @@ def _check_echo_safety(command: str) -> Optional[str]:
 
 
 def check_pipe_safety(command: str) -> Optional[str]:
-    """检查管道命令安全性"""
+    """检查管道命令安全性
+
+    除了检查管道后的直接命令是否在允许列表中，
+    还需要检查 xargs 等命令包装的实际执行命令是否安全。
+    例如 `lsof -ti :8080 | xargs kill -9` 中 kill 是高危命令。
+    """
     if "|" not in command:
         return None
 
@@ -167,12 +172,87 @@ def check_pipe_safety(command: str) -> Optional[str]:
         part = part.strip()
         if not part:
             continue
-        base_cmd, _, _ = parse_command(part)
+        base_cmd, _, args = parse_command(part)
         if base_cmd not in ALLOWED_PIPE_COMMANDS:
             return (
                 f"Command '{base_cmd}' is not allowed in pipe. "
                 f"Allowed: {', '.join(sorted(ALLOWED_PIPE_COMMANDS))}"
             )
+
+        # xargs 特殊处理：检查 xargs 实际执行的命令是否安全
+        if base_cmd == "xargs" and args:
+            # 跳过 xargs 自身的选项（如 -0, -I, -n 等），找到实际命令
+            actual_cmd_parts: list[str] = []
+            skip_next = False
+            for arg in args:
+                if skip_next:
+                    skip_next = False
+                    continue
+                # xargs 带参数的选项
+                if arg in ("-I", "-n", "-P", "-L", "-s", "-d"):
+                    skip_next = True
+                    continue
+                if arg.startswith("-"):
+                    continue
+                actual_cmd_parts.append(arg)
+
+            if actual_cmd_parts:
+                actual_cmd = actual_cmd_parts[0]
+                # 检查 xargs 执行的命令是否在禁止列表中
+                if actual_cmd in BLOCKED_COMMANDS:
+                    return (
+                        f"Command '{actual_cmd}' via xargs is blocked for security reasons"
+                    )
+
+    return None
+
+
+def check_xargs_risk(command: str) -> Optional[RiskLevel]:
+    """检查管道中 xargs 实际执行命令的风险等级
+
+    例如 `lsof -ti :8080 | xargs kill -9` 中，kill 是高危命令，
+    需要提升整个命令的风险等级以触发用户确认。
+
+    Args:
+        command: 完整命令字符串
+
+    Returns:
+        如果 xargs 执行的是高危命令则返回对应 RiskLevel，否则返回 None
+    """
+    if "|" not in command:
+        return None
+
+    pipe_parts = command.split("|")
+
+    for part in pipe_parts[1:]:
+        part = part.strip()
+        if not part:
+            continue
+        base_cmd, _, args = parse_command(part)
+
+        if base_cmd == "xargs" and args:
+            actual_cmd_parts: list[str] = []
+            skip_next = False
+            for arg in args:
+                if skip_next:
+                    skip_next = False
+                    continue
+                if arg in ("-I", "-n", "-P", "-L", "-s", "-d"):
+                    skip_next = True
+                    continue
+                if arg.startswith("-"):
+                    continue
+                actual_cmd_parts.append(arg)
+
+            if actual_cmd_parts:
+                actual_full = " ".join(actual_cmd_parts)
+                from src.orchestrator.policy_engine import DANGER_PATTERNS
+
+                for level in ["high", "medium"]:
+                    for pattern in DANGER_PATTERNS.get(level, []):
+                        if pattern in actual_full:
+                            return level  # type: ignore[return-value]
+
     return None
 
 
@@ -290,7 +370,17 @@ def check_command_safety(command: str) -> CommandCheckResult:
                 matched_rule=rule,
             )
 
-    # 8. 通过检查
+    # 8. 检查 xargs 包装的实际命令风险（如 xargs kill -9）
+    xargs_risk = check_xargs_risk(command)
+    if xargs_risk is not None:
+        return CommandCheckResult(
+            allowed=True,
+            risk_level=xargs_risk,
+            reason=f"Allowed but risk elevated: xargs wraps dangerous command",
+            matched_rule=rule,
+        )
+
+    # 9. 通过检查
     return CommandCheckResult(
         allowed=True,
         risk_level=rule.risk_level,

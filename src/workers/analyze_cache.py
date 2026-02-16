@@ -151,15 +151,24 @@ class AnalyzeTemplateCache:
 _IS_MACOS = platform.system() == "Darwin"
 
 _PORT_COMMANDS_MACOS: list[str] = [
-    "curl -sI http://localhost:{name} --max-time 3",
+    # 1. 进程级查询（可能因权限限制看不到）
     "lsof -iTCP:{name} -sTCP:LISTEN -P -n",
     "lsof -i :{name} -P -n",
+    # 2. 通用端口开放检查（不依赖协议，macOS使用nc的-G选项）
+    # nc的stderr会包含"succeeded!"或"Connection refused"等信息
+    "nc -z -v -G 2 localhost {name}",
+    # 3. HTTP服务检查（仅对HTTP服务有效）
+    "curl -sI http://localhost:{name} --connect-timeout 2 --max-time 3",
 ]
 
 _PORT_COMMANDS_LINUX: list[str] = [
-    "curl -sI http://localhost:{name} --max-time 3",
+    # 1. 进程级查询（推荐ss，fallback lsof）
     "ss -tlnp | grep :{name}",
     "lsof -i :{name} -P -n",
+    # 2. 通用端口开放检查（Linux使用nc的-w选项）
+    "nc -z -v -w 2 localhost {name}",
+    # 3. HTTP服务检查
+    "curl -sI http://localhost:{name} --connect-timeout 2 --max-time 3",
 ]
 
 DEFAULT_ANALYZE_COMMANDS: dict[str, list[str]] = {

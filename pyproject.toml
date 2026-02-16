@@ -52,7 +52,7 @@ target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "ANN", "B", "C4", "SIM"]
-ignore = ["UP007"]  # Keep Union syntax for Python 3.9 compatibility
+ignore = ["UP007", "UP045"]  # Keep Union and Optional syntax for Python 3.9 compatibility
 
 [tool.mypy]
 python_version = "3.9"

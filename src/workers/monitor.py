@@ -45,7 +45,10 @@ class MonitorWorker(BaseWorker):
         return "monitor"
 
     def get_capabilities(self) -> list[str]:
-        return ["snapshot", "check_port", "check_http", "check_process", "top_processes"]
+        return [
+            "snapshot", "check_port", "check_http",
+            "check_process", "top_processes", "find_service_port",
+        ]
 
     async def execute(
         self,
@@ -60,6 +63,7 @@ class MonitorWorker(BaseWorker):
             "check_http": "_check_http",
             "check_process": "_check_process",
             "top_processes": "_top_processes",
+            "find_service_port": "_find_service_port",
         }
 
         method_name = dispatch.get(action)
@@ -362,4 +366,83 @@ class MonitorWorker(BaseWorker):
             data=top,
             message=f"按{label}排序的 Top {len(top)} 进程",
             task_completed=True,
+        )
+
+    # ------------------------------------------------------------------
+    # find_service_port - 按服务名查找实际监听端口
+    # ------------------------------------------------------------------
+    async def _find_service_port(
+        self, args: dict[str, ArgValue],
+    ) -> WorkerResult:
+        """按服务/进程名查找其实际监听的 TCP 端口。
+
+        解决 LLM 默认端口偏见问题：当用户说"重启nginx"但未指定端口时，
+        先调用此方法探测 nginx 实际监听的端口，而非假设 80。
+        """
+        name_raw = args.get("name")
+        if name_raw is None:
+            return WorkerResult(success=False, message="缺少参数: name (服务/进程名)")
+        service_name = str(name_raw).lower()
+
+        found: list[dict[str, Union[str, int]]] = []
+
+        for proc in psutil.process_iter(["name", "pid", "cmdline"]):
+            try:
+                info = proc.info
+                pname: str = (info.get("name", "") or "").lower()
+                cmdline_raw = info.get("cmdline") or []
+                cmdline_str = " ".join(str(c) for c in cmdline_raw).lower()
+
+                if service_name not in pname and service_name not in cmdline_str:
+                    continue
+
+                pid = info.get("pid", 0)
+                connections = proc.net_connections(kind="tcp")
+
+                for conn in connections:
+                    if conn.status == "LISTEN" and conn.laddr:
+                        addr = conn.laddr
+                        found.append({
+                            "pid": pid,
+                            "process_name": info.get("name", "") or "",
+                            "listen_address": str(addr.ip),
+                            "listen_port": addr.port,
+                        })
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+
+        if not found:
+            return WorkerResult(
+                success=True,
+                data=None,
+                message=(
+                    f"未找到名称包含 '{service_name}' 的监听进程。"
+                    f"服务可能未运行，或以其他用户身份运行（需 sudo 权限查看）。"
+                ),
+                task_completed=False,
+            )
+
+        unique_ports = sorted({int(item["listen_port"]) for item in found})
+        port_list = ", ".join(str(p) for p in unique_ports)
+
+        summary_parts = []
+        seen_ports: set[int] = set()
+        for item in found:
+            port = int(item["listen_port"])
+            if port not in seen_ports:
+                seen_ports.add(port)
+                summary_parts.append(
+                    f"PID {item['pid']} ({item['process_name']}) "
+                    f"监听 {item['listen_address']}:{port}"
+                )
+
+        return WorkerResult(
+            success=True,
+            data=found,
+            message=(
+                f"服务 '{service_name}' 实际监听端口: {port_list}\n"
+                + "\n".join(summary_parts)
+                + f"\n⚠️ 请使用实际端口 {port_list} 进行操作，不要使用默认端口!"
+            ),
+            task_completed=False,
         )
