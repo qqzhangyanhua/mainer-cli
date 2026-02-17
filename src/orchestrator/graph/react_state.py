@@ -41,12 +41,20 @@ class ReactState(TypedDict, total=False):
     needs_approval: bool  # 是否需要人工确认
     approval_granted: bool  # 确认是否通过
 
+    # LLM 推理状态
+    current_thinking: Optional[str]  # LLM 当前推理过程
+    llm_is_final: Optional[bool]  # LLM 判断任务是否完成
+    is_simple_intent: Optional[bool]  # 简单意图标记（greeting/identity/chat）
+
     # 状态控制
     task_completed: bool
     is_error: bool
 
     # 错误恢复
     error_recovery_count: int  # 命令失败后回循环重试的次数
+
+    # 迭代耗尽时强制总结
+    force_summarize: bool  # 迭代即将耗尽，下一轮必须用 chat.respond 总结
 
     # 权限错误建议命令
     suggested_commands: Optional[list[str]]

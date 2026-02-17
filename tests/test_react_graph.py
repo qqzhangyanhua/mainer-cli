@@ -29,23 +29,31 @@ class MockLLMClient(LLMClient):
         history: list[object] | None = None,
     ) -> str:
         """生成响应（模拟）"""
-        # 返回一个简单的 chat 指令
+        # 返回新格式：thinking + action + is_final
         return """```json
 {
-    "worker": "chat",
-    "action": "greet",
-    "args": {},
-    "risk_level": "safe"
+    "thinking": "This is a test greeting request",
+    "action": {
+        "worker": "chat",
+        "action": "greet",
+        "args": {},
+        "risk_level": "safe"
+    },
+    "is_final": true
 }
 ```"""
 
     def parse_json_response(self, response: str) -> dict[str, object] | None:
         """解析 JSON 响应（模拟）"""
         return {
-            "worker": "chat",
-            "action": "greet",
-            "args": {},
-            "risk_level": "safe",
+            "thinking": "This is a test greeting request",
+            "action": {
+                "worker": "chat",
+                "action": "greet",
+                "args": {},
+                "risk_level": "safe",
+            },
+            "is_final": True,
         }
 
 
@@ -629,3 +637,179 @@ class TestPermissionErrorDetection:
         assert result.get("task_completed") is False
         assert result.get("error_recovery_count") == 1
         assert result.get("suggested_commands") is None
+
+
+class TestLLMIsFinalLogic:
+    """llm_is_final 完成判断逻辑测试"""
+
+    @pytest.fixture
+    def mock_llm(self) -> MockLLMClient:
+        return MockLLMClient()
+
+    @pytest.fixture
+    def workers(self) -> dict[str, BaseWorker]:
+        return {
+            "system": SystemWorker(),
+            "audit": AuditWorker(),
+        }
+
+    @pytest.fixture
+    def context(self) -> EnvironmentContext:
+        return EnvironmentContext()
+
+    @pytest.fixture
+    def nodes(
+        self,
+        mock_llm: MockLLMClient,
+        workers: dict[str, BaseWorker],
+        context: EnvironmentContext,
+    ) -> ReactNodes:
+        return ReactNodes(
+            llm_client=mock_llm,
+            workers=workers,
+            context=context,
+            dry_run=False,
+            max_risk="high",
+            auto_approve_safe=True,
+            require_dry_run_for_high_risk=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_llm_is_final_true_completes_task(self, nodes: ReactNodes) -> None:
+        """llm_is_final=True + worker 未完成时，LLM 可以加速结束"""
+        state = {
+            "worker_result": {
+                "success": True,
+                "message": "nginx 已停止，8080 端口已关闭",
+                "data": {"command": "curl", "exit_code": 0, "stdout": "Connection refused"},
+                "task_completed": False,  # worker 说没完成
+            },
+            "llm_is_final": True,  # 但 LLM 说完成了
+            "iteration": 2,
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        # LLM is_final=True 加速完成
+        assert result.get("task_completed") is True
+        assert result.get("is_error", False) is False
+
+    @pytest.mark.asyncio
+    async def test_llm_is_final_false_cannot_override_worker_completed(self, nodes: ReactNodes) -> None:
+        """llm_is_final=False 不能覆盖 worker 的 task_completed=True"""
+        state = {
+            "worker_result": {
+                "success": True,
+                "message": "你好！我是运维助手。",
+                "data": None,
+                "task_completed": True,  # chat.respond 标记完成
+            },
+            "llm_is_final": False,  # LLM 错误地设了 false
+            "iteration": 0,
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        # Worker 的 task_completed=True 优先，不被 LLM 覆盖
+        assert result.get("task_completed") is True
+        assert result.get("is_error", False) is False
+
+    @pytest.mark.asyncio
+    async def test_llm_is_final_false_continues_when_worker_not_completed(
+        self, nodes: ReactNodes
+    ) -> None:
+        """llm_is_final=False + worker 未完成时继续循环"""
+        state = {
+            "worker_result": {
+                "success": True,
+                "message": "Command executed",
+                "data": {"command": "ps aux", "exit_code": 0, "stdout": "nginx running"},
+                "task_completed": False,  # shell 命令不标记完成
+            },
+            "llm_is_final": False,  # LLM 也说没完成
+            "iteration": 1,
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        # 继续循环
+        assert result.get("task_completed") is False
+        assert result.get("is_error", False) is False
+        assert result.get("iteration") == 2
+
+    @pytest.mark.asyncio
+    async def test_no_llm_is_final_falls_back_to_worker(self, nodes: ReactNodes) -> None:
+        """llm_is_final 未设置时回退到 worker 的 task_completed"""
+        state = {
+            "worker_result": {
+                "success": True,
+                "message": "分析完成",
+                "data": None,
+                "task_completed": True,
+            },
+            # llm_is_final 未设置
+            "iteration": 0,
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        # 回退到 worker 的 task_completed=True
+        assert result.get("task_completed") is True
+        assert result.get("is_error", False) is False
+
+    @pytest.mark.asyncio
+    async def test_llm_is_final_false_force_summarize_near_max(self, nodes: ReactNodes) -> None:
+        """倒数第二轮（max-1）设置 force_summarize=True"""
+        state = {
+            "worker_result": {
+                "success": True,
+                "message": "ok",
+                "data": None,
+                "task_completed": False,
+            },
+            "llm_is_final": False,
+            "iteration": 3,  # next = 4, which is max_iterations - 1
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+        }
+
+        result = await nodes.check_node(state)
+
+        # 倒数第二轮：标记 force_summarize，继续循环
+        assert result.get("task_completed") is False
+        assert result.get("force_summarize") is True
+        assert result.get("iteration") == 4
+
+    @pytest.mark.asyncio
+    async def test_llm_is_final_false_graceful_at_max_iterations(self, nodes: ReactNodes) -> None:
+        """达到 max_iterations 时优雅降级，不报错"""
+        state = {
+            "worker_result": {
+                "success": True,
+                "message": "ok",
+                "data": None,
+                "task_completed": False,
+            },
+            "llm_is_final": False,
+            "iteration": 4,  # next = 5, hitting max
+            "max_iterations": 5,
+            "error_recovery_count": 0,
+            "user_input": "检查nginx服务",
+            "messages": [],
+        }
+
+        result = await nodes.check_node(state)
+
+        # 优雅降级：不报错，而是生成总结
+        assert result.get("is_error", False) is False
+        assert result.get("task_completed") is True
+        assert result.get("final_message") is not None
+        assert len(str(result.get("final_message", ""))) > 0

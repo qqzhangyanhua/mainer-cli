@@ -293,7 +293,7 @@ class OrchestratorEngine:
     async def react_loop_graph(
         self,
         user_input: str,
-        max_iterations: int = 5,
+        max_iterations: int = 15,
         session_id: Optional[str] = None,
         session_history: Optional[list[ConversationEntry]] = None,
     ) -> str:

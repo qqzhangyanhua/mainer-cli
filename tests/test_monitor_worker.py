@@ -166,7 +166,7 @@ class TestMonitorWorker:
             result = await worker.execute("check_port", {"port": 8080})
 
         assert result.success is True
-        assert result.task_completed is True
+        assert result.task_completed is False  # 让 LLM 决定是否继续诊断
         assert isinstance(result.data, dict)
         assert result.data["status"] == "ok"
 
@@ -187,7 +187,7 @@ class TestMonitorWorker:
             result = await worker.execute("check_port", {"port": 9999})
 
         assert result.success is True
-        assert result.task_completed is True
+        assert result.task_completed is False  # 端口不可达，LLM 应继续诊断
         assert isinstance(result.data, dict)
         assert result.data["status"] == "critical"
 
@@ -214,7 +214,7 @@ class TestMonitorWorker:
             result = await worker.execute("check_http", {"url": "http://localhost:8080/health"})
 
         assert result.success is True
-        assert result.task_completed is True
+        assert result.task_completed is False  # 让 LLM 决定是否继续诊断
         assert isinstance(result.data, dict)
         assert result.data["status_code"] == 200
         assert result.data["status"] == "ok"
@@ -262,7 +262,7 @@ class TestMonitorWorker:
             result = await worker.execute("check_process", {"name": "python"})
 
         assert result.success is True
-        assert result.task_completed is True
+        assert result.task_completed is False  # 让 LLM 决定是否继续诊断
         assert isinstance(result.data, list)
         assert len(result.data) == 1
         assert result.data[0]["pid"] == 1234
@@ -277,7 +277,7 @@ class TestMonitorWorker:
             result = await worker.execute("check_process", {"name": "nonexistent"})
 
         assert result.success is True
-        assert result.task_completed is True
+        assert result.task_completed is False  # 进程未找到，LLM 应继续诊断
         assert result.data is None
         assert "未找到" in result.message
 
@@ -309,7 +309,7 @@ class TestMonitorWorker:
             result = await worker.execute("top_processes", {"sort_by": "cpu", "limit": 2})
 
         assert result.success is True
-        assert result.task_completed is True
+        assert result.task_completed is False  # 让 LLM 决定是否继续分析
         assert isinstance(result.data, list)
         assert len(result.data) == 2
         # node (50%) should be first

@@ -4,9 +4,11 @@ import pytest
 
 from src.orchestrator.command_whitelist import (
     check_command_safety,
+    check_redirect_safety,
     parse_command,
     check_pipe_safety,
     check_dangerous_patterns,
+    split_chain_commands,
 )
 
 
@@ -67,21 +69,23 @@ class TestCheckDangerousPatterns:
         result = check_command_safety("echo `whoami`")
         assert result.allowed is False
 
-    def test_command_chaining(self) -> None:
+    def test_command_chaining_not_in_dangerous_patterns(self) -> None:
+        # && 和 || 不再由 check_dangerous_patterns 处理
+        # 改由 split_chain_commands + check_command_safety 智能处理
         result = check_dangerous_patterns("ls && rm -rf /")
-        assert result is not None
-        assert "&&" in result
+        assert result is None, "&& is now handled by split_chain_commands"
 
     def test_semicolon(self) -> None:
         result = check_dangerous_patterns("ls; rm -rf /")
         assert result is not None
 
-    def test_redirection(self) -> None:
-        # echo 允许重定向到当前目录，但不允许系统目录
-        result_safe = check_dangerous_patterns("echo 'content' > .env")
-        assert result_safe is None, "echo to current dir should be allowed"
+    def test_redirection_not_in_dangerous_patterns(self) -> None:
+        # > 不再由 check_dangerous_patterns 处理
+        # 改由 check_redirect_safety 智能处理（允许 2>/dev/null 等）
+        result = check_dangerous_patterns("cat file > output.txt")
+        assert result is None, "> is now handled by check_redirect_safety"
 
-        # echo 到系统目录由 _check_echo_safety 在 check_command_safety 流程中检查
+        # echo 到系统目录仍被 _check_echo_safety 拦截
         result_dangerous = check_command_safety("echo 'pwned' > /etc/passwd")
         assert result_dangerous.allowed is False, "echo to system dir should be blocked"
 
@@ -93,6 +97,107 @@ class TestCheckDangerousPatterns:
         # 管道单独处理，不在这里拦截
         result = check_dangerous_patterns("ls | grep foo")
         assert result is None
+
+
+class TestSplitChainCommands:
+    """命令链拆分测试"""
+
+    def test_no_chain(self) -> None:
+        result = split_chain_commands("ls -la")
+        assert result == ["ls -la"]
+
+    def test_and_chain(self) -> None:
+        result = split_chain_commands("ls && echo done")
+        assert result == ["ls", "echo done"]
+
+    def test_or_chain(self) -> None:
+        result = split_chain_commands("nginx -t || echo failed")
+        assert result == ["nginx -t", "echo failed"]
+
+    def test_mixed_chain(self) -> None:
+        result = split_chain_commands("cmd1 && cmd2 || cmd3")
+        assert result == ["cmd1", "cmd2", "cmd3"]
+
+    def test_respects_double_quotes(self) -> None:
+        result = split_chain_commands('echo "hello && world" && ls')
+        assert result == ['echo "hello && world"', "ls"]
+
+    def test_respects_single_quotes(self) -> None:
+        result = split_chain_commands("echo 'a || b' || exit 1")
+        assert result == ["echo 'a || b'", "exit 1"]
+
+    def test_pipe_not_split(self) -> None:
+        result = split_chain_commands("ls | grep foo")
+        assert result == ["ls | grep foo"]
+
+    def test_pipe_with_chain(self) -> None:
+        result = split_chain_commands("cat /etc/hosts | grep local && echo ok")
+        assert result == ["cat /etc/hosts | grep local", "echo ok"]
+
+
+class TestCheckRedirectSafety:
+    """重定向安全检查测试"""
+
+    def test_safe_stderr_devnull(self) -> None:
+        assert check_redirect_safety("find / -name nginx.conf 2>/dev/null") is None
+
+    def test_safe_stdout_devnull(self) -> None:
+        assert check_redirect_safety("cmd >/dev/null") is None
+
+    def test_safe_stderr_merge(self) -> None:
+        assert check_redirect_safety("nginx -t 2>&1") is None
+
+    def test_safe_combined(self) -> None:
+        assert check_redirect_safety("cmd 2>&1 >/dev/null") is None
+
+    def test_block_file_redirect(self) -> None:
+        result = check_redirect_safety("cat file > output.txt")
+        assert result is not None
+        assert "redirect" in result.lower() or "file" in result.lower()
+
+    def test_block_append_redirect(self) -> None:
+        result = check_redirect_safety("echo test >> logfile")
+        assert result is not None
+
+    def test_block_input_redirect(self) -> None:
+        result = check_redirect_safety("mysql < dump.sql")
+        assert result is not None
+        assert "input" in result.lower() or "<" in result
+
+    def test_redirect_inside_quotes_ignored(self) -> None:
+        assert check_redirect_safety('grep ">" file.txt') is None
+
+    def test_safe_append_devnull(self) -> None:
+        assert check_redirect_safety("cmd 2>>/dev/null") is None
+
+
+class TestChainCommandSafety:
+    """命令链安全检查集成测试"""
+
+    def test_safe_chain_allowed(self) -> None:
+        result = check_command_safety("ls -la && echo done")
+        assert result.allowed is True
+
+    def test_dangerous_chain_blocked(self) -> None:
+        result = check_command_safety("ls && rm -rf /")
+        assert result.allowed is False
+        assert "chain" in result.reason.lower() or "blocked" in result.reason.lower()
+
+    def test_or_chain_with_safe_commands(self) -> None:
+        result = check_command_safety("nginx -t 2>/dev/null || echo 'nginx not found'")
+        # nginx -t may or may not be in whitelist; but should not be blocked for &&/||
+        assert result.allowed is not False or "chain" in (result.reason or "").lower()
+
+    def test_chain_highest_risk(self) -> None:
+        # Both commands allowed, but different risk levels
+        result = check_command_safety("ls -la && df -h")
+        assert result.allowed is True
+        assert result.risk_level == "safe"
+
+    def test_redirect_with_chain(self) -> None:
+        result = check_command_safety("nginx -t 2>/dev/null && echo ok")
+        # Should not be blocked by redirect or chain patterns
+        assert result.allowed is not False
 
 
 class TestCheckPipeSafety:

@@ -90,7 +90,7 @@ class TestShellWorker:
         )
 
         assert result.success is False
-        assert "&&" in result.message or "dangerous" in result.message.lower()
+        assert "blocked" in result.message.lower()
 
     @pytest.mark.asyncio
     async def test_unknown_action(self) -> None:

@@ -90,11 +90,102 @@ def parse_command(command: str) -> tuple[str, Optional[str], list[str]]:
     return base_command, subcommand, args
 
 
+def split_chain_commands(command: str) -> list[str]:
+    """拆分 && 和 || 命令链，尊重引号
+
+    例如:
+        "nginx -t && nginx -s reload" → ["nginx -t", "nginx -s reload"]
+        'echo "hello && world" && ls' → ['echo "hello && world"', "ls"]
+        "simple command" → ["simple command"]
+
+    Returns:
+        子命令列表（至少一个元素）
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    in_single_quote = False
+    in_double_quote = False
+    i = 0
+
+    while i < len(command):
+        char = command[i]
+
+        if char == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            current.append(char)
+        elif char == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            current.append(char)
+        elif not in_single_quote and not in_double_quote:
+            if i + 1 < len(command) and command[i : i + 2] in ("&&", "||"):
+                part = "".join(current).strip()
+                if part:
+                    parts.append(part)
+                current = []
+                i += 2
+                continue
+            current.append(char)
+        else:
+            current.append(char)
+
+        i += 1
+
+    part = "".join(current).strip()
+    if part:
+        parts.append(part)
+
+    return parts if parts else [command]
+
+
+def check_redirect_safety(command: str) -> Optional[str]:
+    """检查重定向安全性
+
+    允许安全的重定向模式（stderr 抑制、流合并）：
+        - 2>/dev/null, >/dev/null, 2>>/dev/null  → 丢弃输出
+        - 2>&1, >&2                               → 流合并
+
+    拦截危险的文件写入重定向：
+        - > file, >> file                          → 用 system.write_file 替代
+
+    Returns:
+        拒绝原因字符串，安全则返回 None
+    """
+    import re
+
+    # 移除引号内容，避免误判（如 grep ">" file）
+    cleaned = re.sub(r"'[^']*'", "", command)
+    cleaned = re.sub(r'"[^"]*"', "", cleaned)
+
+    # 移除安全的重定向模式
+    safe_redirects = [
+        r"\d*>{1,2}\s*/dev/null",  # 2>/dev/null, >/dev/null, >>/dev/null
+        r"\d*>&\d+",  # 2>&1, >&2
+    ]
+    for pattern in safe_redirects:
+        cleaned = re.sub(pattern, " ", cleaned)
+
+    # 移除安全模式后，检查是否还有残留的重定向
+    if re.search(r">{1,2}", cleaned):
+        return (
+            "File redirect (> or >>) is not allowed. "
+            "Redirect to /dev/null is OK (e.g., 2>/dev/null). "
+            "To write files, use system.write_file."
+        )
+
+    if "<" in cleaned:
+        return "Input redirect (<) is not allowed."
+
+    return None
+
+
 def check_dangerous_patterns(command: str) -> Optional[str]:
     """检查危险模式
 
     echo 命令允许 $() 和重定向（用于生成配置文件），
     由 _check_echo_safety 在规则匹配后单独校验。
+
+    注意：&&、||、>、>>、< 不在 DANGEROUS_PATTERNS 中，
+    由 split_chain_commands 和 check_redirect_safety 智能处理。
     """
     command_stripped = command.strip()
 
@@ -107,8 +198,32 @@ def check_dangerous_patterns(command: str) -> Optional[str]:
         if pattern in command:
             if pattern == "|":
                 continue
+            # & 需要智能处理：排除 && (命令链) 和 >& (重定向合并)
+            if pattern == "&":
+                if not _has_standalone_ampersand(command):
+                    continue
             return f"Dangerous pattern detected: '{pattern}'"
     return None
+
+
+def _has_standalone_ampersand(command: str) -> bool:
+    """检查命令中是否包含独立的 & (后台执行)
+
+    排除以下安全场景：
+    - && 命令链（由 split_chain_commands 处理）
+    - 2>&1, >&2 等重定向流合并
+    """
+    import re
+
+    # 移除引号内容
+    temp = re.sub(r"'[^']*'", "", command)
+    temp = re.sub(r'"[^"]*"', "", temp)
+    # 移除重定向流合并模式：2>&1, >&2, 1>&2 等
+    temp = re.sub(r"\d*>&\d+", "", temp)
+    # 移除 &&（由 split_chain_commands 处理）
+    temp = temp.replace("&&", "")
+    # 剩余内容中如果还有 & 则是后台执行
+    return "&" in temp
 
 
 def _check_echo_safety(command: str) -> Optional[str]:
@@ -286,17 +401,64 @@ def check_blocked_flags(rule: CommandRule, args: list[str]) -> Optional[str]:
     return None
 
 
-def check_command_safety(command: str) -> CommandCheckResult:
-    """检查命令是否安全"""
-    command = command.strip()
+def _check_chain_safety(sub_commands: list[str]) -> CommandCheckResult:
+    """检查命令链（&& / ||）中每个子命令的安全性
 
-    if not command:
-        return CommandCheckResult(allowed=False, risk_level="high", reason="Empty command")
+    策略：
+    - 任意子命令被拦截 → 整条链被拦截
+    - 任意子命令未匹配白名单 → 整条链交给风险分析引擎
+    - 全部通过 → 取最高风险等级
+    """
+    results = [_check_single_command_safety(cmd) for cmd in sub_commands]
 
-    # 1. 检查危险模式
+    risk_order: dict[Optional[RiskLevel], int] = {
+        "safe": 0, "medium": 1, "high": 2, None: 1,
+    }
+
+    # 任一子命令被显式拦截 → 整条链拦截
+    for r in results:
+        if r.allowed is False:
+            return CommandCheckResult(
+                allowed=False,
+                risk_level=r.risk_level or "high",
+                reason=f"Command in chain blocked: {r.reason}",
+            )
+
+    # 任一子命令未匹配白名单 → 交给风险分析引擎
+    for r in results:
+        if r.allowed is None:
+            return CommandCheckResult(
+                allowed=None,
+                risk_level=None,
+                reason=f"Command in chain not matched: {r.reason}",
+                matched_by="none",
+            )
+
+    # 全部通过：取最高风险
+    highest = max(results, key=lambda r: risk_order.get(r.risk_level, 1))
+    return CommandCheckResult(
+        allowed=True,
+        risk_level=highest.risk_level,
+        reason=f"Chain of {len(sub_commands)} commands allowed",
+        matched_rule=highest.matched_rule,
+    )
+
+
+def _check_single_command_safety(command: str) -> CommandCheckResult:
+    """检查单条命令的安全性（不含 && / ||）"""
+    # 1. 检查危险模式（;、$()、`、& 等）
     danger_reason = check_dangerous_patterns(command)
     if danger_reason:
         return CommandCheckResult(allowed=False, risk_level="high", reason=danger_reason)
+
+    # 1.5 检查重定向安全性（允许 2>/dev/null，拦截文件写入）
+    # echo 命令跳过通用重定向检查，由 _check_echo_safety 单独处理
+    if not command.strip().startswith("echo "):
+        redirect_reason = check_redirect_safety(command)
+        if redirect_reason:
+            return CommandCheckResult(
+                allowed=False, risk_level="high", reason=redirect_reason
+            )
 
     # 2. 解析命令
     base_command, subcommand, args = parse_command(command)
@@ -304,7 +466,6 @@ def check_command_safety(command: str) -> CommandCheckResult:
     # 3. 检查绝对禁止列表（支持前缀匹配，如 mkfs.ext4 → mkfs）
     blocked_match = base_command in BLOCKED_COMMANDS
     if not blocked_match:
-        # 处理 mkfs.ext4 这类带后缀的命令
         base_prefix = base_command.split(".")[0] if "." in base_command else ""
         blocked_match = base_prefix in BLOCKED_COMMANDS
     if blocked_match:
@@ -318,12 +479,9 @@ def check_command_safety(command: str) -> CommandCheckResult:
     rule = find_matching_rule(base_command, subcommand)
 
     if rule is None:
-        # 4.1 特殊处理：--version / --help / -v / -V 等纯信息查看参数
-        # 对白名单中有子命令规则的命令，允许 version/help 查看
         info_only_flags = {"--version", "--help", "-v", "-V", "-h", "version", "help"}
         all_args = ([subcommand] if subcommand else []) + args
         if all_args and all(a in info_only_flags for a in all_args):
-            # 检查该命令是否在白名单中有任何规则
             has_any_rule = any(r.base_command == base_command for r in COMMAND_WHITELIST)
             if has_any_rule:
                 return CommandCheckResult(
@@ -376,7 +534,7 @@ def check_command_safety(command: str) -> CommandCheckResult:
         return CommandCheckResult(
             allowed=True,
             risk_level=xargs_risk,
-            reason=f"Allowed but risk elevated: xargs wraps dangerous command",
+            reason="Allowed but risk elevated: xargs wraps dangerous command",
             matched_rule=rule,
         )
 
@@ -387,6 +545,25 @@ def check_command_safety(command: str) -> CommandCheckResult:
         reason=f"Allowed: {rule.description}",
         matched_rule=rule,
     )
+
+
+def check_command_safety(command: str) -> CommandCheckResult:
+    """检查命令是否安全
+
+    支持 && / || 命令链：自动拆分后独立检查每个子命令。
+    支持安全重定向：2>/dev/null、2>&1 等不被拦截。
+    """
+    command = command.strip()
+
+    if not command:
+        return CommandCheckResult(allowed=False, risk_level="high", reason="Empty command")
+
+    # 0. 拆分命令链（&& / ||），独立检查每个子命令
+    sub_commands = split_chain_commands(command)
+    if len(sub_commands) > 1:
+        return _check_chain_safety(sub_commands)
+
+    return _check_single_command_safety(command)
 
 
 def get_command_risk_level(command: str) -> RiskLevel:

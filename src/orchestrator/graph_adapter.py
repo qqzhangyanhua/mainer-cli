@@ -22,6 +22,7 @@ def build_graph_messages(
                 "content": f"Execute: {entry.instruction.worker}.{entry.instruction.action}",
                 "instruction": entry.instruction.dict(),
                 "user_input": entry.user_input,
+                "thinking": "",  # 跨会话历史不保留 thinking
             }
         )
         messages.append(

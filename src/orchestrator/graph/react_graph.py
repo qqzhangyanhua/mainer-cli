@@ -194,7 +194,7 @@ class ReactGraph:
         self,
         user_input: str,
         session_id: Optional[str] = None,
-        max_iterations: int = 5,
+        max_iterations: int = 15,
         messages: Optional[list[dict[str, object]]] = None,
     ) -> ReactState:
         """执行 ReAct 循环

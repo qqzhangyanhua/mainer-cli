@@ -149,22 +149,49 @@ class ReactNodes:
             risk_level="safe",
         )
 
-    def _parse_and_validate_instruction(self, response: str) -> tuple[Optional[Instruction], str]:
-        """解析并校验 LLM 指令"""
+    def _parse_and_validate_instruction(
+        self, response: str
+    ) -> tuple[Optional[Instruction], str, Optional[str], Optional[bool]]:
+        """解析并校验 LLM 指令
+
+        支持两种格式:
+        1. 新格式: {"thinking": "...", "action": {...}, "is_final": bool}
+        2. 旧格式: {"worker": "...", "action": "...", "args": {...}, "risk_level": "..."}
+
+        Returns:
+            (instruction, error, thinking, is_final)
+        """
         parsed = self._llm.parse_json_response(response)
         if parsed is None:
-            return None, "Failed to parse LLM response JSON"
+            return None, "Failed to parse LLM response JSON", None, None
+
+        # 提取 thinking 和 is_final（新格式）
+        thinking = None
+        is_final = None
+        if "thinking" in parsed:
+            thinking = str(parsed.get("thinking", ""))
+        if "is_final" in parsed:
+            is_final = bool(parsed.get("is_final", False))
+
+        # 判断是新格式还是旧格式
+        action_dict = parsed.get("action")
+        if isinstance(action_dict, dict) and "worker" in action_dict:
+            # 新格式：从 action 字段提取指令
+            instruction_dict = action_dict
+        else:
+            # 旧格式：直接使用 parsed
+            instruction_dict = parsed
 
         try:
-            instruction = self._build_instruction(parsed)
+            instruction = self._build_instruction(instruction_dict)
         except ValidationError as e:
-            return None, f"Invalid instruction schema: {e}"
+            return None, f"Invalid instruction schema: {e}", thinking, is_final
 
         valid, error = validate_instruction(instruction, self._workers)
         if not valid:
-            return None, error
+            return None, error, thinking, is_final
 
-        return instruction, ""
+        return instruction, "", thinking, is_final
 
     def _build_repair_prompt(self, user_input: str, error_message: str) -> str:
         """构建修复提示，要求 LLM 纠正无效指令"""
@@ -172,7 +199,8 @@ class ReactNodes:
             "Your previous JSON was invalid: "
             f"{error_message}\n\n"
             "Return ONLY a valid JSON object with fields:\n"
-            '{"worker": "...", "action": "...", "args": {...}, "risk_level": "safe|medium|high"}\n\n'
+            '{"thinking": "your reasoning", "action": {"worker": "...", "action": "...", '
+            '"args": {...}, "risk_level": "safe|medium|high"}, "is_final": false}\n\n'
             "Allowed workers/actions:\n"
             f"{self._available_workers_text()}\n\n"
             f"User request: {user_input}"
@@ -184,39 +212,45 @@ class ReactNodes:
         user_prompt: str,
         user_input: str,
         history: list[ConversationEntry],
-    ) -> tuple[Optional[Instruction], str]:
+    ) -> tuple[Optional[Instruction], str, Optional[str], Optional[bool]]:
         """生成指令并进行一次纠错重试
 
         注意: history 已通过 build_user_prompt 嵌入到 user_prompt 文本中，
         不再通过 generate() 的 history 参数传递，避免重复。
+
+        Returns:
+            (instruction, error, thinking, is_final)
         """
         llm_response = await self._llm.generate(system_prompt, user_prompt)
-        instruction, error = self._parse_and_validate_instruction(llm_response)
+        instruction, error, thinking, is_final = self._parse_and_validate_instruction(llm_response)
         if instruction:
-            return instruction, ""
+            return instruction, "", thinking, is_final
 
         repair_prompt = self._build_repair_prompt(user_input, error)
         llm_response = await self._llm.generate(system_prompt, repair_prompt)
-        instruction, error = self._parse_and_validate_instruction(llm_response)
+        instruction, error, thinking, is_final = self._parse_and_validate_instruction(llm_response)
         if instruction:
-            return instruction, ""
+            return instruction, "", thinking, is_final
 
         fallback = self._build_fallback_instruction(user_input, error)
         if fallback:
-            return fallback, ""
+            return fallback, "", None, True
 
-        return None, error
+        return None, error, None, None
 
-    def _build_conversation_history(self, state: ReactState) -> list[ConversationEntry]:
-        """从消息历史构建 ConversationEntry 列表
+    def _build_conversation_history(
+        self, state: ReactState
+    ) -> tuple[list[ConversationEntry], list[str]]:
+        """从消息历史构建 ConversationEntry 列表和 thinking 历史
 
         Args:
             state: 当前状态
 
         Returns:
-            ConversationEntry 列表
+            (ConversationEntry 列表, thinking 历史列表)
         """
         history: list[ConversationEntry] = []
+        thinking_list: list[str] = []
         messages = state.get("messages", [])
 
         def _message_role(message: object) -> Optional[str]:
@@ -273,14 +307,17 @@ class ReactNodes:
                             user_input=_message_get(msg1, "user_input"),  # type: ignore[arg-type]
                         )
                     )
+                    # 提取 thinking 历史
+                    thinking_val = _message_get(msg1, "thinking")
+                    thinking_list.append(str(thinking_val) if thinking_val else "")
             i += 2
 
-        return history
+        return history, thinking_list
 
     async def preprocess_node(self, state: ReactState) -> dict[str, object]:
         """预处理节点：意图检测 + 指代解析"""
         user_input = state.get("user_input", "")
-        history = self._build_conversation_history(state)
+        history, _thinking_list = self._build_conversation_history(state)
 
         preprocessed = self._preprocessor.preprocess(user_input, history)
 
@@ -293,7 +330,12 @@ class ReactNodes:
         }
 
     async def reason_node(self, state: ReactState) -> dict[str, object]:
-        """推理节点：LLM 生成下一步指令"""
+        """推理节点：LLM 生成下一步指令
+
+        支持两种路径：
+        1. 快捷路径：preprocessor 高置信度直接生成指令（不经过 LLM）
+        2. LLM 路径：调用 LLM 生成 thinking + action + is_final
+        """
         preprocessed_dict = state.get("preprocessed", {})
         intent = preprocessed_dict.get("intent", "")
 
@@ -302,7 +344,70 @@ class ReactNodes:
 
         user_input = state.get("user_input", "")
         preprocessed_dict = state.get("preprocessed", {})
-        history = self._build_conversation_history(state)
+        history, thinking_history = self._build_conversation_history(state)
+
+        # 默认值
+        thinking: Optional[str] = None
+        is_final: Optional[bool] = None
+
+        # --- 强制总结路径（迭代即将耗尽）---
+        if state.get("force_summarize", False):
+            self._report_progress("reasoning", "迭代即将耗尽，生成最终总结...")
+            system_prompt = self._prompt_builder.build_system_prompt(
+                self._context,
+                available_workers=self._workers,
+            )
+            # 在 user_prompt 中强制要求总结
+            force_prompt = self._prompt_builder.build_user_prompt(
+                user_input, history=history, thinking_history=thinking_history
+            )
+            force_prompt += (
+                "\n\nCRITICAL: This is your LAST iteration. You MUST use chat.respond now "
+                "to deliver a comprehensive summary of all findings to the user in Chinese. "
+                "Do NOT execute any more commands. Summarize what you found and give recommendations."
+            )
+            instruction, error, thinking, is_final = await self._generate_instruction_with_retry(
+                system_prompt=system_prompt,
+                user_prompt=force_prompt,
+                user_input=user_input,
+                history=history,
+            )
+            if instruction is None:
+                return {
+                    "is_error": True,
+                    "error_message": error,
+                }
+            # 如果 LLM 仍然没有生成 chat.respond，强制覆盖
+            if instruction.worker != "chat" or instruction.action != "respond":
+                # 构建基于历史的兜底总结
+                findings_parts = []
+                for entry in history:
+                    findings_parts.append(
+                        f"- {entry.instruction.worker}.{entry.instruction.action}: "
+                        f"{entry.result.message}"
+                    )
+                findings_text = "\n".join(findings_parts) if findings_parts else "无"
+                fallback_msg = (
+                    f"以下是针对「{user_input}」的诊断结果（已达最大迭代次数）：\n\n"
+                    f"{findings_text}\n\n"
+                    f"建议根据以上信息进一步排查。"
+                )
+                instruction = Instruction(
+                    worker="chat",
+                    action="respond",
+                    args={"message": thinking or fallback_msg},
+                    risk_level="safe",
+                )
+            is_final = True
+            return {
+                "current_instruction": instruction.dict(),
+                "is_simple_intent": False,
+                "current_thinking": thinking,
+                "llm_is_final": True,
+                "force_summarize": False,  # 重置标志
+            }
+
+        # --- 快捷路径（不经过 LLM）---
 
         # 自我介绍/身份询问 - 直接回复
         if preprocessed_dict.get("intent") == "identity":
@@ -319,7 +424,7 @@ class ReactNodes:
                     },
                     risk_level="safe",
                 )
-                # 简单意图不输出进度
+                is_final = True
             else:
                 system_prompt = self._prompt_builder.build_system_prompt(
                     self._context,
@@ -327,7 +432,7 @@ class ReactNodes:
                 )
                 user_prompt = self._prompt_builder.build_user_prompt(user_input, history=None)
 
-                instruction, error = await self._generate_instruction_with_retry(
+                instruction, error, thinking, is_final = await self._generate_instruction_with_retry(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     user_input=user_input,
@@ -338,13 +443,12 @@ class ReactNodes:
                         "is_error": True,
                         "error_message": error,
                     }
-        # 检查是否可以跳过 LLM（高置信度的 explain 意图）
+        # 高置信度 explain → 直接生成 analyze 指令
         elif (
             preprocessed_dict.get("confidence") == "high"
             and preprocessed_dict.get("intent") == "explain"
             and preprocessed_dict.get("resolved_target")
         ):
-            # 直接生成 Instruction
             instruction = Instruction(
                 worker="analyze",
                 action="explain",
@@ -354,14 +458,13 @@ class ReactNodes:
                 },
                 risk_level="safe",
             )
-
-            self._report_progress("reasoning", "✅ 直接生成 analyze 指令（跳过 LLM）")
+            self._report_progress("reasoning", "直接生成 analyze 指令（跳过 LLM）")
+        # explain 但需要先获取上下文
         elif (
             preprocessed_dict.get("intent") == "explain"
             and preprocessed_dict.get("needs_context")
             and preprocessed_dict.get("target_type")
         ):
-            # 需要先获取上下文
             list_command = self._get_list_command(str(preprocessed_dict.get("target_type")))
             instruction = Instruction(
                 worker="shell",
@@ -369,10 +472,9 @@ class ReactNodes:
                 args={"command": list_command},
                 risk_level="safe",
             )
-
-            self._report_progress("reasoning", f"✅ 需要上下文，先执行: {list_command}")
+            self._report_progress("reasoning", f"需要上下文，先执行: {list_command}")
+        # 部署意图
         elif preprocessed_dict.get("intent") == "deploy":
-            # 部署意图 - 直接使用一键部署
             repo_url = self._preprocessor.extract_repo_url(user_input)
             target_dir = self._context.cwd
             if repo_url and self._workers.get("deploy"):
@@ -382,9 +484,8 @@ class ReactNodes:
                     args={"repo_url": repo_url, "target_dir": target_dir},
                     risk_level="medium",
                 )
-                self._report_progress("reasoning", "✅ 生成一键部署指令")
+                self._report_progress("reasoning", "生成一键部署指令")
             elif repo_url:
-                # 缺少 deploy worker，回退到 LLM 部署 prompt
                 system_prompt = self._prompt_builder.build_deploy_prompt(
                     self._context,
                     repo_url=repo_url,
@@ -393,7 +494,7 @@ class ReactNodes:
                 )
                 user_prompt = f"Deploy this project: {user_input}"
 
-                instruction, error = await self._generate_instruction_with_retry(
+                instruction, error, thinking, is_final = await self._generate_instruction_with_retry(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     user_input=user_input,
@@ -404,23 +505,24 @@ class ReactNodes:
                         "is_error": True,
                         "error_message": error,
                     }
-                self._report_progress("reasoning", "✅ 生成部署指令")
+                self._report_progress("reasoning", "生成部署指令")
             else:
                 return {
                     "is_error": True,
                     "error_message": "无法提取 GitHub URL",
                 }
+
+        # --- LLM 路径 ---
         else:
-            # 普通流程：调用 LLM
             system_prompt = self._prompt_builder.build_system_prompt(
                 self._context,
                 available_workers=self._workers,
             )
-            # 传入历史记录，让 LLM 看到之前执行的命令结果
-            # 这样在第二轮迭代时，LLM 能基于命令输出生成 chat.respond 总结
-            user_prompt = self._prompt_builder.build_user_prompt(user_input, history=history)
+            user_prompt = self._prompt_builder.build_user_prompt(
+                user_input, history=history, thinking_history=thinking_history
+            )
 
-            instruction, error = await self._generate_instruction_with_retry(
+            instruction, error, thinking, is_final = await self._generate_instruction_with_retry(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 user_input=user_input,
@@ -440,13 +542,18 @@ class ReactNodes:
             fallback = self._build_fallback_instruction(user_input, error)
             if fallback:
                 instruction = fallback
+                is_final = True
             else:
                 return {
                     "is_error": True,
                     "error_message": error,
                 }
 
-        # 只对复杂操作显示指令详情（不显示 chat.respond 等简单指令）
+        # 展示 thinking 内容
+        if thinking and not is_simple_intent:
+            self._report_progress("thinking", thinking)
+
+        # 只对复杂操作显示指令详情
         if not is_simple_intent and instruction.worker != "chat":
             self._report_progress(
                 "instruction",
@@ -456,6 +563,8 @@ class ReactNodes:
         return {
             "current_instruction": instruction.dict(),
             "is_simple_intent": is_simple_intent,
+            "current_thinking": thinking,
+            "llm_is_final": is_final,
         }
 
     async def safety_node(self, state: ReactState) -> dict[str, object]:
@@ -546,7 +655,8 @@ class ReactNodes:
         # 记录审计日志
         await self._log_operation(state, instruction, result)
 
-        # 添加到消息历史
+        # 添加到消息历史（包含 thinking）
+        current_thinking = state.get("current_thinking")
         messages = list(state.get("messages", []))
         messages.append(
             {
@@ -554,6 +664,7 @@ class ReactNodes:
                 "content": f"Execute: {instruction.worker}.{instruction.action}",
                 "instruction": instruction.dict(),
                 "user_input": state.get("user_input"),
+                "thinking": current_thinking or "",
             }
         )
         messages.append(
@@ -572,12 +683,16 @@ class ReactNodes:
     async def check_node(self, state: ReactState) -> dict[str, object]:
         """检查节点：判断任务是否完成
 
-        关键设计：命令执行失败（exit code != 0）属于可恢复错误，
-        应回到 reason_node 让 LLM 分析错误并尝试替代方案，
-        而非直接终止。仅系统级错误（如 unknown worker）才是致命错误。
+        完成判断优先级：
+        1. LLM 的 is_final 标志（新逻辑）
+        2. Worker 的 task_completed 标志（兼容旧逻辑）
+
+        命令执行失败（exit code != 0）属于可恢复错误，
+        回到 reason_node 让 LLM 分析错误并尝试替代方案。
         """
         result_dict = state.get("worker_result", {})
-        task_completed = bool(result_dict.get("task_completed", False))
+        worker_task_completed = bool(result_dict.get("task_completed", False))
+        llm_is_final = state.get("llm_is_final")
         success = bool(result_dict.get("success", False))
         iteration = state.get("iteration", 0) + 1
         max_iterations = state.get("max_iterations", 5)
@@ -633,21 +748,97 @@ class ReactNodes:
                 "error_message": str(result_dict.get("message", "Unknown error")),
             }
 
-        if task_completed:
+        # Worker 级别的完成标志是确定性的（如 chat.respond），永远尊重
+        if worker_task_completed:
+            return {
+                "task_completed": True,
+                "final_message": str(result_dict.get("message", "")),
+            }
+
+        # Worker 未标记完成时，LLM 的 is_final 可以加速结束
+        if llm_is_final is True:
             return {
                 "task_completed": True,
                 "final_message": str(result_dict.get("message", "")),
             }
 
         if iteration >= max_iterations:
+            # 迭代耗尽：基于已收集的信息构建兜底总结，而不是直接报错
+            self._report_progress(
+                "summarizing",
+                "已达到最大迭代次数，正在基于已收集信息生成总结...",
+            )
+            return await self._force_summarize_from_history(state)
+
+        # 倒数第二轮：标记下一轮必须总结
+        if iteration >= max_iterations - 1:
+            self._report_progress(
+                "warning",
+                "即将达到最大迭代次数，下一步将给出总结。",
+            )
             return {
-                "is_error": True,
-                "error_message": f"Reached maximum iterations ({max_iterations})",
+                "iteration": iteration,
+                "task_completed": False,
+                "force_summarize": True,
             }
 
+        # Worker 未完成 + LLM 未标记结束 → 继续循环
         return {
             "iteration": iteration,
             "task_completed": False,
+        }
+
+    async def _force_summarize_from_history(
+        self, state: ReactState
+    ) -> dict[str, object]:
+        """迭代耗尽时，调用 LLM 基于已收集信息生成最终总结
+
+        不再直接报错，而是让 LLM 综合所有历史结果给出有价值的诊断。
+        """
+        history, thinking_history = self._build_conversation_history(state)
+        user_input = state.get("user_input", "")
+
+        # 构建历史摘要
+        findings: list[str] = []
+        for idx, entry in enumerate(history):
+            action = f"{entry.instruction.worker}.{entry.instruction.action}"
+            result_msg = entry.result.message
+            findings.append(f"- {action}: {result_msg}")
+
+        findings_text = "\n".join(findings) if findings else "（无历史记录）"
+
+        summarize_prompt = (
+            f"你已经执行了以下诊断步骤，但迭代次数已用完，必须立即给出最终总结。\n\n"
+            f"用户请求: {user_input}\n\n"
+            f"已执行的步骤和结果:\n{findings_text}\n\n"
+            f"请基于以上已收集的信息，用中文给出综合诊断总结。"
+            f"包括：已确认的事实、发现的问题、可能的原因、建议的下一步操作。\n"
+            f"如果信息不足以得出完整结论，请说明还需要检查什么。\n\n"
+            f"直接返回总结文本，不要返回 JSON。"
+        )
+
+        try:
+            system_prompt = "你是一个运维诊断助手。请基于已收集的信息给出简洁、有价值的中文诊断总结。"
+            summary = await self._llm.generate(system_prompt, summarize_prompt)
+            # 清理可能的 JSON 包装
+            summary = summary.strip()
+            if summary.startswith("{") and summary.endswith("}"):
+                parsed = self._llm.parse_json_response(summary)
+                if parsed and isinstance(parsed.get("message"), str):
+                    summary = parsed["message"]
+                elif parsed and isinstance(parsed.get("args"), dict):
+                    summary = str(parsed["args"].get("message", summary))
+        except Exception:
+            summary = (
+                f"诊断未完成（已达最大迭代次数）。\n\n"
+                f"已执行的检查:\n{findings_text}\n\n"
+                f"建议手动继续排查。"
+            )
+
+        return {
+            "task_completed": True,
+            "is_error": False,
+            "final_message": summary,
         }
 
     async def error_node(self, state: ReactState) -> dict[str, object]:

@@ -230,7 +230,7 @@ class MonitorWorker(BaseWorker):
                 data={"name": f"port_{port}", "value": str(round(elapsed_ms, 2)),
                       "unit": "ms", "status": "ok", "message": metric.message},
                 message=metric.message,
-                task_completed=True,
+                task_completed=False,  # 让 LLM 决定是否继续诊断
             )
         except (OSError, asyncio.TimeoutError):
             elapsed_ms = (time.monotonic() - start) * 1000
@@ -240,7 +240,7 @@ class MonitorWorker(BaseWorker):
                       "unit": "ms", "status": "critical",
                       "message": f"端口 {host}:{port} 不可达"},
                 message=f"端口 {host}:{port} 不可达 (超时 {elapsed_ms:.0f}ms)",
-                task_completed=True,
+                task_completed=False,  # 端口不可达是重要信号，LLM 应继续诊断
             )
 
     # ------------------------------------------------------------------
@@ -272,7 +272,7 @@ class MonitorWorker(BaseWorker):
                 data={"name": f"http_{url}", "status_code": status_code,
                       "latency_ms": str(round(elapsed_ms, 2)), "status": status},
                 message=msg,
-                task_completed=True,
+                task_completed=False,  # 让 LLM 决定是否继续诊断
             )
         except (httpx.HTTPError, OSError) as exc:
             elapsed_ms = (time.monotonic() - start) * 1000
@@ -281,7 +281,7 @@ class MonitorWorker(BaseWorker):
                 data={"name": f"http_{url}", "status_code": 0,
                       "latency_ms": str(round(elapsed_ms, 2)), "status": "critical"},
                 message=f"HTTP {url} 请求失败: {exc} ({elapsed_ms:.0f}ms)",
-                task_completed=True,
+                task_completed=False,  # HTTP 失败是重要信号，LLM 应继续诊断
             )
 
     # ------------------------------------------------------------------
@@ -317,14 +317,14 @@ class MonitorWorker(BaseWorker):
                 success=True,
                 data=None,
                 message=f"未找到名称包含 '{proc_name}' 的进程",
-                task_completed=True,
+                task_completed=False,  # 进程未找到是重要信号，LLM 应继续诊断
             )
 
         return WorkerResult(
             success=True,
             data=found,
             message=f"找到 {len(found)} 个匹配进程 '{proc_name}'",
-            task_completed=True,
+            task_completed=False,  # 让 LLM 决定是否继续诊断
         )
 
     # ------------------------------------------------------------------
@@ -365,7 +365,7 @@ class MonitorWorker(BaseWorker):
             success=True,
             data=top,
             message=f"按{label}排序的 Top {len(top)} 进程",
-            task_completed=True,
+            task_completed=False,  # 让 LLM 决定是否继续分析
         )
 
     # ------------------------------------------------------------------
