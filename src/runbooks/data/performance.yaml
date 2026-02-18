@@ -1,0 +1,34 @@
+name: performance
+description: "System performance investigation — diagnose slow system or high load"
+keywords:
+  - 慢
+  - 卡
+  - 负载
+  - 性能
+  - load
+  - 高
+  - cpu
+  - 内存
+  - memory
+  - swap
+  - performance
+  - slow
+steps:
+  - description: "Check load average"
+    command: "uptime"
+    risk: safe
+  - description: "CPU and memory overview"
+    command: "top -bn1 | head -20"
+    risk: safe
+  - description: "Memory and swap usage"
+    command: "free -h"
+    risk: safe
+  - description: "Disk space"
+    command: "df -h"
+    risk: safe
+  - description: "IO statistics (if available)"
+    command: "iostat -x 1 2 2>/dev/null || echo 'iostat not available'"
+    risk: safe
+  - description: "Network connection counts"
+    command: "ss -s"
+    risk: safe

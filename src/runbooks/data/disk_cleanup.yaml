@@ -1,0 +1,29 @@
+name: disk_cleanup
+description: "Disk space investigation and cleanup — find what's eating disk space"
+keywords:
+  - 磁盘
+  - 空间
+  - 满了
+  - disk
+  - space
+  - full
+  - 清理
+  - cleanup
+  - du
+  - df
+steps:
+  - description: "Check disk usage by partition"
+    command: "df -h"
+    risk: safe
+  - description: "Find largest directories"
+    command: "du -sh /* 2>/dev/null | sort -rh | head -10"
+    risk: safe
+  - description: "Find large files"
+    command: "find / -type f -size +100M 2>/dev/null | head -20"
+    risk: safe
+  - description: "Check log file sizes"
+    command: "du -sh /var/log/* 2>/dev/null | sort -rh | head -10"
+    risk: safe
+  - description: "Check Docker disk usage (if Docker is present)"
+    command: "docker system df 2>/dev/null || echo 'Docker not available'"
+    risk: safe

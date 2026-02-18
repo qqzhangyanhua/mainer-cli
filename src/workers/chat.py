@@ -1,23 +1,48 @@
-"""聊天对话 Worker - 处理非运维类对话"""
+"""聊天对话 Worker - 处理最终回复"""
 
 from __future__ import annotations
 
-from src.types import ArgValue, WorkerResult
+from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 
 
 class ChatWorker(BaseWorker):
-    """聊天对话 Worker
-
-    处理问候、闲聊等非运维操作
-    """
+    """聊天对话 Worker — 用于向用户发送最终回复"""
 
     @property
     def name(self) -> str:
         return "chat"
 
+    @property
+    def description(self) -> str:
+        return (
+            "Deliver the final answer to the user. "
+            "MUST be the last action in every task. "
+            "Summarize all findings in clear, structured Chinese with markdown formatting."
+        )
+
     def get_capabilities(self) -> list[str]:
         return ["respond"]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="respond",
+                description=(
+                    "Send a comprehensive answer to the user. "
+                    "Use Chinese. Include structured findings, tables, and recommendations."
+                ),
+                params=[
+                    ActionParam(
+                        name="message",
+                        param_type="string",
+                        description="The final message to display to the user (Chinese, markdown)",
+                        required=True,
+                    ),
+                ],
+                risk_level="safe",
+            ),
+        ]
 
     async def execute(
         self,

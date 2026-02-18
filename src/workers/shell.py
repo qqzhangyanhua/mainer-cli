@@ -7,7 +7,7 @@ from typing import Tuple, Union, cast
 
 from src.orchestrator.policy_engine import PolicyEngine
 from src.orchestrator.whitelist_rules import EXIT1_OK_COMMANDS
-from src.types import ArgValue, WorkerResult
+from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 from src.workers.path_utils import normalize_path
 
@@ -18,24 +18,52 @@ TRUNCATE_TAIL = 2000
 
 
 class ShellWorker(BaseWorker):
-    """Shell 命令执行 Worker（白名单模式）
-
-    支持的操作:
-    - execute_command: 执行白名单内的 shell 命令
-
-    安全机制:
-    - 只允许执行预定义白名单内的命令
-    - 禁止命令链接（&&, ||, ;）和危险重定向
-    - 管道只允许接安全的文本处理命令
-    - 某些命令禁止特定危险参数（如 rm -rf）
-    """
+    """Shell 命令执行 Worker（白名单模式）"""
 
     @property
     def name(self) -> str:
         return "shell"
 
+    @property
+    def description(self) -> str:
+        return (
+            "Execute shell commands (whitelisted). "
+            "Your primary diagnostic tool — use for any system inspection, "
+            "service checks, log viewing, network probing, and general-purpose commands. "
+            "Supports && chaining, pipes (|) with text-processing commands, and 2>/dev/null. "
+            "Blocked: ;, $(), backticks, > file redirect."
+        )
+
     def get_capabilities(self) -> list[str]:
         return ["execute_command"]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="execute_command",
+                description=(
+                    "Execute a shell command. Supports: ls, cat, grep, ps, curl, "
+                    "docker, nginx, systemctl, ss, lsof, df, du, ping, dig, etc. "
+                    "Use && to chain related checks (e.g. 'which nginx && nginx -v'). "
+                    "Use | with grep/awk/sed/head/tail/sort/wc/jq for filtering."
+                ),
+                params=[
+                    ActionParam(
+                        name="command",
+                        param_type="string",
+                        description="The shell command to execute",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="working_dir",
+                        param_type="string",
+                        description="Working directory (optional)",
+                        required=False,
+                    ),
+                ],
+                risk_level="safe",
+            ),
+        ]
 
     @staticmethod
     def _is_exit1_ok(command: str) -> bool:

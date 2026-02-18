@@ -1,0 +1,29 @@
+name: container_troubleshoot
+description: "Docker container troubleshooting — diagnose container issues"
+keywords:
+  - 容器
+  - docker
+  - container
+  - 重启
+  - 日志
+  - 挂了
+  - 崩溃
+  - crash
+  - unhealthy
+  - exit
+steps:
+  - description: "List containers and check status"
+    command: "docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+    risk: safe
+  - description: "Inspect container details"
+    command: "docker inspect {container} 2>/dev/null | head -80"
+    risk: safe
+  - description: "Check recent logs"
+    command: "docker logs --tail 100 {container} 2>&1"
+    risk: safe
+  - description: "Check resource usage"
+    command: "docker stats --no-stream {container}"
+    risk: safe
+  - description: "Check container health and restart policy"
+    command: "docker inspect --format '{{.State.Health.Status}} restarts={{.RestartCount}}' {container} 2>/dev/null"
+    risk: safe

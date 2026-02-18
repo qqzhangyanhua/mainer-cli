@@ -1,0 +1,39 @@
+name: service_health
+description: "Generic service health check — works for nginx, mysql, redis, postgresql, and other services"
+keywords:
+  - 检查
+  - 排查
+  - 状态
+  - 健康
+  - 服务
+  - nginx
+  - mysql
+  - redis
+  - postgresql
+  - postgres
+  - mongodb
+  - apache
+  - httpd
+  - tomcat
+  - check
+  - health
+  - status
+steps:
+  - description: "Locate and check version"
+    command: "which {service} && {service} --version 2>&1 || {service} -v 2>&1"
+    risk: safe
+  - description: "Validate configuration (if applicable)"
+    command: "{service} -t 2>&1 || echo 'no config test available'"
+    risk: medium
+  - description: "Check service status"
+    command: "systemctl status {service} 2>/dev/null || ps aux | grep {service} | grep -v grep"
+    risk: safe
+  - description: "Check listening ports"
+    command: "ss -tlnp | grep {service} 2>/dev/null || lsof -i -P -n | grep {service}"
+    risk: safe
+  - description: "Test connectivity"
+    command: "curl -sI http://localhost:{port} 2>/dev/null || echo 'use discovered port'"
+    risk: safe
+  - description: "Check recent logs"
+    command: "journalctl -u {service} --no-pager -n 30 2>/dev/null || tail -30 /var/log/{service}/error.log 2>/dev/null"
+    risk: safe

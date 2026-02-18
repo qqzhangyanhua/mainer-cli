@@ -7,28 +7,25 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Union, cast  # noqa: F401 – used by read-only methods
 
-from src.types import ArgValue, WorkerResult
+from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 from src.workers.file_ops import append_to_file, replace_in_file, write_file
 from src.workers.path_utils import normalize_path
 
 
 class SystemWorker(BaseWorker):
-    """系统文件操作 Worker
-
-    支持的操作:
-    - list_files: 列出目录下的文件
-    - find_large_files: 查找大文件
-    - check_disk_usage: 检查磁盘使用情况
-    - delete_files: 删除文件
-    - write_file: 创建或覆写文件
-    - append_to_file: 追加内容到文件
-    - replace_in_file: 查找替换文件内容
-    """
+    """系统文件操作 Worker"""
 
     @property
     def name(self) -> str:
         return "system"
+
+    @property
+    def description(self) -> str:
+        return (
+            "File system operations: list/find/delete files, check disk usage, "
+            "write/append/replace file content. For shell commands, use shell worker instead."
+        )
 
     def get_capabilities(self) -> list[str]:
         return [
@@ -39,6 +36,83 @@ class SystemWorker(BaseWorker):
             "write_file",
             "append_to_file",
             "replace_in_file",
+        ]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="list_files",
+                description="List files in a directory",
+                params=[
+                    ActionParam(
+                        name="path", param_type="string",
+                        description="Directory path (default: .)", required=False,
+                    ),
+                ],
+            ),
+            ToolAction(
+                name="find_large_files",
+                description="Find files larger than a threshold",
+                params=[
+                    ActionParam(
+                        name="path", param_type="string",
+                        description="Search root (default: .)", required=False,
+                    ),
+                    ActionParam(
+                        name="min_size_mb", param_type="integer",
+                        description="Minimum size in MB (default: 100)", required=False,
+                    ),
+                ],
+            ),
+            ToolAction(
+                name="check_disk_usage",
+                description="Check disk usage for a path",
+                params=[
+                    ActionParam(
+                        name="path", param_type="string",
+                        description="Path to check (default: /)", required=False,
+                    ),
+                ],
+            ),
+            ToolAction(
+                name="delete_files",
+                description="Delete specified files (not directories)",
+                params=[
+                    ActionParam(
+                        name="files", param_type="array",
+                        description="List of file paths to delete",
+                    ),
+                ],
+                risk_level="high",
+            ),
+            ToolAction(
+                name="write_file",
+                description="Create or overwrite a file",
+                params=[
+                    ActionParam(name="path", param_type="string", description="File path"),
+                    ActionParam(name="content", param_type="string", description="File content"),
+                ],
+                risk_level="medium",
+            ),
+            ToolAction(
+                name="append_to_file",
+                description="Append content to an existing file",
+                params=[
+                    ActionParam(name="path", param_type="string", description="File path"),
+                    ActionParam(name="content", param_type="string", description="Content to append"),
+                ],
+                risk_level="medium",
+            ),
+            ToolAction(
+                name="replace_in_file",
+                description="Find and replace text in a file",
+                params=[
+                    ActionParam(name="path", param_type="string", description="File path"),
+                    ActionParam(name="old_string", param_type="string", description="Text to find"),
+                    ActionParam(name="new_string", param_type="string", description="Replacement text"),
+                ],
+                risk_level="medium",
+            ),
         ]
 
     async def execute(

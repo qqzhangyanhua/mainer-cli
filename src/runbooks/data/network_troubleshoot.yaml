@@ -1,0 +1,31 @@
+name: network_troubleshoot
+description: "Network troubleshooting — diagnose connectivity, DNS, and port issues"
+keywords:
+  - 网络
+  - 连接
+  - 不通
+  - 超时
+  - timeout
+  - network
+  - dns
+  - 端口
+  - port
+  - ping
+  - 访问不了
+  - 连不上
+steps:
+  - description: "Basic connectivity test"
+    command: "ping -c 3 {target}"
+    risk: safe
+  - description: "Check local listening ports"
+    command: "ss -tlnp"
+    risk: safe
+  - description: "HTTP-level diagnosis"
+    command: "curl -v {url} 2>&1 | head -30"
+    risk: safe
+  - description: "DNS resolution check"
+    command: "nslookup {domain} 2>/dev/null || dig {domain} 2>/dev/null"
+    risk: safe
+  - description: "Route tracing"
+    command: "traceroute {target} 2>/dev/null || tracepath {target} 2>/dev/null"
+    risk: safe

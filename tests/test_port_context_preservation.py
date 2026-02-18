@@ -44,12 +44,13 @@ class TestPortContextPreservation:
     def test_default_port_warning_in_system_prompt(
         self, prompt_builder: PromptBuilder, env_context: EnvironmentContext
     ) -> None:
-        """测试系统提示中包含默认端口相关指导"""
+        """测试系统提示中包含端口发现相关指导"""
         system_prompt = prompt_builder.build_system_prompt(env_context)
 
-        # 新 prompt 通过 Key principles 指导不假设默认端口
-        assert "default ports" in system_prompt.lower() or "nginx=80" in system_prompt
-        assert "monitor.find_service_port" in system_prompt
+        # 新 prompt 通过诊断流程引导先从配置发现端口，再检测监听
+        assert "find_service_port" in system_prompt
+        # 包含实际端口发现的命令示例
+        assert "ss -tlnp" in system_prompt or "lsof -i" in system_prompt
 
     def test_port_specific_action_guidance(
         self, prompt_builder: PromptBuilder, env_context: EnvironmentContext
@@ -57,10 +58,17 @@ class TestPortContextPreservation:
         """测试针对端口操作的特定指导"""
         system_prompt = prompt_builder.build_system_prompt(env_context)
 
-        # 新 prompt 包含 find_service_port 工具描述
+        # 工具列表中包含 find_service_port
         assert "find_service_port" in system_prompt
-        # 新 prompt 通过 Key principles 指导端口检测
-        assert "Detect the actual port" in system_prompt or "monitor.find_service_port" in system_prompt
+
+        # 当有实际 worker 实例时，应包含详细描述
+        from src.workers.monitor import MonitorWorker
+
+        workers: dict[str, object] = {"monitor": MonitorWorker()}
+        detailed_prompt = prompt_builder.build_system_prompt(
+            env_context, available_workers=workers  # type: ignore[arg-type]
+        )
+        assert "monitor.find_service_port" in detailed_prompt
 
     def test_no_port_extraction_when_absent(self, prompt_builder: PromptBuilder) -> None:
         """测试当输入中没有端口号时，不应添加端口警告"""
@@ -84,5 +92,5 @@ class TestPortContextPreservation:
 
         # 验证 find_service_port 被包含在工具描述中
         assert "find_service_port" in system_prompt
-        # 验证包含端口探测的关键原则
-        assert "Detect the actual port" in system_prompt or "default ports" in system_prompt.lower()
+        # 验证包含多种端口探测方法
+        assert "ss -tlnp" in system_prompt or "lsof -i" in system_prompt

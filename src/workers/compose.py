@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Union, cast
 
-from src.types import ArgValue, WorkerResult
+from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 from src.workers.shell import ShellWorker
 
@@ -29,8 +29,74 @@ class ComposeWorker(BaseWorker):
     def name(self) -> str:
         return "compose"
 
+    @property
+    def description(self) -> str:
+        return "Docker Compose management: status, health, logs, restart, up, down"
+
     def get_capabilities(self) -> list[str]:
         return ["status", "health", "logs", "restart", "up", "down"]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="status",
+                description="List all services and their state in a Compose project.",
+                params=[
+                    ActionParam(name="project", param_type="string", description="Project name (-p). Empty for auto.", required=False),
+                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="health",
+                description="Run health check on all Compose services.",
+                params=[
+                    ActionParam(name="project", param_type="string", description="Project name (-p)", required=False),
+                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="logs",
+                description="Aggregate logs from one or all services in a Compose project.",
+                params=[
+                    ActionParam(name="project", param_type="string", description="Project name (-p)", required=False),
+                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
+                    ActionParam(name="service", param_type="string", description="Specific service name. Empty for all.", required=False),
+                    ActionParam(name="tail", param_type="integer", description="Number of trailing log lines. Default 100.", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="restart",
+                description="Restart services (respects dependency order).",
+                params=[
+                    ActionParam(name="project", param_type="string", description="Project name (-p)", required=False),
+                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
+                    ActionParam(name="service", param_type="string", description="Service to restart. Empty for all.", required=False),
+                ],
+                risk_level="medium",
+            ),
+            ToolAction(
+                name="up",
+                description="Start the Compose project (creates containers if needed).",
+                params=[
+                    ActionParam(name="project", param_type="string", description="Project name (-p)", required=False),
+                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
+                    ActionParam(name="detach", param_type="boolean", description="Run in background. Default true.", required=False),
+                ],
+                risk_level="medium",
+            ),
+            ToolAction(
+                name="down",
+                description="Stop and remove containers, networks for the Compose project.",
+                params=[
+                    ActionParam(name="project", param_type="string", description="Project name (-p)", required=False),
+                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
+                ],
+                risk_level="high",
+            ),
+        ]
 
     async def _detect_compose_cmd(self) -> str:
         """检测 docker compose 命令格式（v2 优先）"""

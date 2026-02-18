@@ -9,7 +9,7 @@ from typing import Union
 import httpx
 import psutil
 
-from src.types import ArgValue, MonitorMetric, MonitorStatus, WorkerResult
+from src.types import ActionParam, ArgValue, MonitorMetric, MonitorStatus, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 
 # 默认阈值：(warning, critical)
@@ -44,10 +44,93 @@ class MonitorWorker(BaseWorker):
     def name(self) -> str:
         return "monitor"
 
+    @property
+    def description(self) -> str:
+        return (
+            "System resource monitoring (read-only, safe). "
+            "Provides CPU/memory/disk snapshots, port/HTTP health checks, "
+            "process lookup, and service port discovery."
+        )
+
     def get_capabilities(self) -> list[str]:
         return [
             "snapshot", "check_port", "check_http",
             "check_process", "top_processes", "find_service_port",
+        ]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="snapshot",
+                description="Quick system overview: CPU, memory, disk usage, and load average",
+                params=[
+                    ActionParam(
+                        name="include",
+                        param_type="array",
+                        description="Metrics to include: cpu, memory, disk, load (default: all)",
+                        required=False,
+                    ),
+                ],
+            ),
+            ToolAction(
+                name="check_port",
+                description="Test TCP port connectivity and measure response time",
+                params=[
+                    ActionParam(name="port", param_type="integer", description="TCP port number"),
+                    ActionParam(
+                        name="host", param_type="string",
+                        description="Target host (default: localhost)", required=False,
+                    ),
+                ],
+            ),
+            ToolAction(
+                name="check_http",
+                description="HTTP endpoint health check with status code and latency",
+                params=[
+                    ActionParam(name="url", param_type="string", description="URL to check"),
+                    ActionParam(
+                        name="timeout", param_type="integer",
+                        description="Timeout in seconds (default: 5)", required=False,
+                    ),
+                ],
+            ),
+            ToolAction(
+                name="check_process",
+                description="Check if a process is running by name",
+                params=[
+                    ActionParam(
+                        name="name", param_type="string",
+                        description="Process name to search for",
+                    ),
+                ],
+            ),
+            ToolAction(
+                name="top_processes",
+                description="List top processes by CPU or memory usage",
+                params=[
+                    ActionParam(
+                        name="sort_by", param_type="string",
+                        description="Sort by: cpu or memory (default: cpu)", required=False,
+                    ),
+                    ActionParam(
+                        name="limit", param_type="integer",
+                        description="Number of processes (default: 10)", required=False,
+                    ),
+                ],
+            ),
+            ToolAction(
+                name="find_service_port",
+                description=(
+                    "Find actual TCP listening ports for a service. "
+                    "Use BEFORE assuming default ports (e.g., nginx might listen on 8080 not 80)"
+                ),
+                params=[
+                    ActionParam(
+                        name="name", param_type="string",
+                        description="Service/process name (e.g., nginx, mysql, redis)",
+                    ),
+                ],
+            ),
         ]
 
     async def execute(

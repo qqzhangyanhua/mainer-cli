@@ -154,6 +154,80 @@ def config_show() -> None:
     )
 
 
+@config_app.command("list-presets")
+def config_list_presets() -> None:
+    """列出所有可用的模型预设
+
+    示例:
+        opsai config list-presets
+    """
+    from rich.table import Table
+
+    from src.llm.presets import list_presets
+
+    table = Table(title="Available Model Presets")
+    table.add_column("Name", style="cyan")
+    table.add_column("Model", style="magenta")
+    table.add_column("Description", style="green")
+    table.add_column("Function Calling", style="yellow", justify="center")
+    table.add_column("Context Window", style="blue", justify="right")
+
+    for preset in list_presets():
+        fc = "✓" if preset.supports_function_calling else "✗"
+        ctx = f"{preset.context_window // 1000}K"
+        table.add_row(preset.name, preset.model, preset.description, fc, ctx)
+
+    console.print(table)
+    console.print("\n[dim]Usage: opsai config use-preset <name> [--api-key KEY][/dim]")
+
+
+@config_app.command("use-preset")
+def config_use_preset(
+    name: str = typer.Argument(..., help="预设名称（使用 list-presets 查看可用预设）"),
+    api_key: Optional[str] = typer.Option(None, "--api-key", "-k", help="API 密钥"),
+) -> None:
+    """快速切换模型预设
+
+    示例:
+        opsai config use-preset openai-gpt4o --api-key sk-xxx
+        opsai config use-preset deepseek --api-key sk-xxx
+        opsai config use-preset local-qwen
+    """
+    from src.llm.presets import get_preset
+
+    preset = get_preset(name)
+    if preset is None:
+        from src.llm.presets import list_presets
+
+        available = ", ".join(p.name for p in list_presets())
+        console.print(f"[red]Unknown preset: {name}[/red]")
+        console.print(f"[dim]Available: {available}[/dim]")
+        raise typer.Exit(1)
+
+    if preset.requires_api_key and not api_key:
+        console.print(f"[red]Preset '{name}' requires --api-key[/red]")
+        raise typer.Exit(1)
+
+    config_manager = ConfigManager()
+    config = config_manager.load()
+
+    config.llm.model = preset.model
+    config.llm.base_url = preset.base_url
+    config.llm.max_tokens = preset.recommended_max_tokens
+    config.llm.temperature = preset.recommended_temperature
+    config.llm.supports_function_calling = preset.supports_function_calling
+    config.llm.context_window = preset.context_window
+    if api_key:
+        config.llm.api_key = api_key
+
+    config_manager.save(config)
+    console.print(f"[green]✓[/green] Switched to: [bold]{preset.description}[/bold]")
+    console.print(f"  Model: {preset.model}")
+    console.print(f"  Base URL: {preset.base_url}")
+    fc_status = "✓" if preset.supports_function_calling else "✗"
+    console.print(f"  Function Calling: {fc_status}")
+
+
 @config_app.command("set-llm")
 def config_set_llm(
     model: str = typer.Option(..., "--model", "-m", help="模型名称"),

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from src.types import ArgValue, WorkerResult
+from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 
 
@@ -39,8 +39,30 @@ class AuditWorker(BaseWorker):
     def name(self) -> str:
         return "audit"
 
+    @property
+    def description(self) -> str:
+        return "Append-only audit logging for operation records"
+
     def get_capabilities(self) -> list[str]:
         return ["log_operation"]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="log_operation",
+                description="Record an operation to the append-only audit log for compliance.",
+                params=[
+                    ActionParam(name="input", param_type="string", description="Original user input/instruction", required=True),
+                    ActionParam(name="worker", param_type="string", description="Worker that executed (e.g. container, system)", required=True),
+                    ActionParam(name="action", param_type="string", description="Action that was executed", required=True),
+                    ActionParam(name="risk", param_type="string", description="Risk level: safe, medium, or high", required=True),
+                    ActionParam(name="confirmed", param_type="string", description="Whether user confirmed (yes/no)", required=True),
+                    ActionParam(name="exit_code", param_type="integer", description="Exit/result code", required=False),
+                    ActionParam(name="output", param_type="string", description="Brief output summary (first 100 chars)", required=False),
+                ],
+                risk_level="safe",
+            ),
+        ]
 
     async def execute(
         self,

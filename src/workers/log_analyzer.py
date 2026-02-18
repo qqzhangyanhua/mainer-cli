@@ -7,12 +7,14 @@ from collections import Counter, defaultdict
 from typing import Optional, Union
 
 from src.types import (
+    ActionParam,
     ArgValue,
     LogAnalysis,
     LogEntry,
     LogLevel,
     LogPatternCount,
     LogTrendPoint,
+    ToolAction,
     WorkerResult,
 )
 from src.workers.base import BaseWorker
@@ -77,8 +79,46 @@ class LogAnalyzerWorker(BaseWorker):
     def name(self) -> str:
         return "log_analyzer"
 
+    @property
+    def description(self) -> str:
+        return "Log file analysis: pattern extraction, error counting, trend detection"
+
     def get_capabilities(self) -> list[str]:
         return ["analyze_lines", "analyze_file", "analyze_container"]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="analyze_lines",
+                description="Analyze raw log text for patterns, errors, and trends.",
+                params=[
+                    ActionParam(name="lines", param_type="string", description="Raw log content (newline-separated lines)", required=True),
+                    ActionParam(name="source", param_type="string", description="Source label for output (e.g. 'input', 'stdout')", required=False),
+                    ActionParam(name="top_n", param_type="integer", description="Number of top error/warn patterns to report. Default 10.", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="analyze_file",
+                description="Read log file from path and analyze (pattern extraction, error count).",
+                params=[
+                    ActionParam(name="path", param_type="string", description="Path to log file", required=True),
+                    ActionParam(name="tail", param_type="integer", description="Number of trailing lines to read. Default 1000.", required=False),
+                    ActionParam(name="top_n", param_type="integer", description="Number of top patterns. Default 10.", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="analyze_container",
+                description="Fetch Docker container logs and analyze for patterns and errors.",
+                params=[
+                    ActionParam(name="container", param_type="string", description="Container name or ID", required=True),
+                    ActionParam(name="tail", param_type="integer", description="Number of trailing log lines. Default 500.", required=False),
+                    ActionParam(name="top_n", param_type="integer", description="Number of top patterns. Default 10.", required=False),
+                ],
+                risk_level="safe",
+            ),
+        ]
 
     async def execute(
         self,

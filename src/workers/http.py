@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import httpx
 
 from src.config.manager import HttpConfig
-from src.types import ArgValue, WorkerResult
+from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 
 
@@ -36,8 +36,51 @@ class HttpWorker(BaseWorker):
     def name(self) -> str:
         return "http"
 
+    @property
+    def description(self) -> str:
+        return "HTTP client for fetching URLs and GitHub content"
+
     def get_capabilities(self) -> list[str]:
         return ["fetch_url", "fetch_github_readme", "list_github_files"]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="fetch_url",
+                description="Fetch content from any HTTP/HTTPS URL. Returns up to 5000 chars.",
+                params=[
+                    ActionParam(name="url", param_type="string", description="Full URL (e.g. https://example.com/page)", required=True),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="fetch_github_readme",
+                description="Fetch README from a GitHub repository (tries main/master, README.md/rst).",
+                params=[
+                    ActionParam(
+                        name="repo_url",
+                        param_type="string",
+                        description="GitHub repo URL: https://github.com/owner/repo",
+                        required=True,
+                    ),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="list_github_files",
+                description="List files and dirs at repo root or specified path via GitHub API.",
+                params=[
+                    ActionParam(
+                        name="repo_url",
+                        param_type="string",
+                        description="GitHub repo URL: https://github.com/owner/repo",
+                        required=True,
+                    ),
+                    ActionParam(name="path", param_type="string", description="Sub-path in repo (default: root)", required=False),
+                ],
+                risk_level="safe",
+            ),
+        ]
 
     def _is_valid_url(self, url: str) -> bool:
         """验证 URL 格式"""

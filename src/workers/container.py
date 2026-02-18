@@ -6,7 +6,7 @@ import json
 import re
 from typing import cast
 
-from src.types import ArgValue, WorkerResult
+from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 from src.workers.shell import ShellWorker
 
@@ -37,6 +37,10 @@ class ContainerWorker(BaseWorker):
     def name(self) -> str:
         return "container"
 
+    @property
+    def description(self) -> str:
+        return "Docker container management: list, inspect, logs, restart, stop, start, stats"
+
     def get_capabilities(self) -> list[str]:
         return [
             "list_containers",
@@ -46,6 +50,67 @@ class ContainerWorker(BaseWorker):
             "stop",
             "start",
             "stats",
+        ]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="list_containers",
+                description="List Docker containers. Use when user wants to see running or all containers.",
+                params=[
+                    ActionParam(name="all", param_type="boolean", description="Include stopped containers. Default false.", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="inspect_container",
+                description="Inspect container details (config, state, network). Use container_id or name.",
+                params=[
+                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="logs",
+                description="Fetch container logs. Use for debugging or viewing output.",
+                params=[
+                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                    ActionParam(name="tail", param_type="integer", description="Number of trailing lines to fetch. Default 100.", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="restart",
+                description="Restart a container. Use when service needs restart.",
+                params=[
+                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                ],
+                risk_level="medium",
+            ),
+            ToolAction(
+                name="stop",
+                description="Stop a running container.",
+                params=[
+                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                ],
+                risk_level="medium",
+            ),
+            ToolAction(
+                name="start",
+                description="Start a stopped container.",
+                params=[
+                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                ],
+                risk_level="medium",
+            ),
+            ToolAction(
+                name="stats",
+                description="Get container CPU and memory usage statistics.",
+                params=[
+                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                ],
+                risk_level="safe",
+            ),
         ]
 
     async def _check_docker_available(self) -> tuple[bool, str]:

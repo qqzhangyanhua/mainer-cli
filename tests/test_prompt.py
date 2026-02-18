@@ -15,7 +15,7 @@ class TestPromptBuilder:
 
         prompt = builder.build_system_prompt(context)
 
-        assert "ops engineer agent" in prompt.lower()
+        assert "senior ops engineer" in prompt.lower()
         assert "Available tools" in prompt
         assert "system:" in prompt
         assert "Output format" in prompt
@@ -161,6 +161,6 @@ class TestPromptBuilder:
         # 新 prompt 的核心工作流：THINK → ACT → OBSERVE → REPEAT
         assert "THINK" in prompt
         assert "ACT" in prompt
-        # 验证关键原则：先执行命令获取数据
-        assert "ALWAYS execute commands" in prompt
+        # 验证关键原则：真实数据驱动、不猜测
         assert "NEVER guess" in prompt
+        assert "Commands first" in prompt or "shell.execute_command" in prompt

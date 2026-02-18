@@ -215,12 +215,60 @@ class ReactNodes:
     ) -> tuple[Optional[Instruction], str, Optional[str], Optional[bool]]:
         """生成指令并进行一次纠错重试
 
-        注意: history 已通过 build_user_prompt 嵌入到 user_prompt 文本中，
-        不再通过 generate() 的 history 参数传递，避免重复。
+        自动选择：
+        - Function Calling 模式：模型支持时优先使用，解析更精确
+        - 文本 JSON 模式：fallback，兼容所有模型
 
         Returns:
             (instruction, error, thinking, is_final)
         """
+        # 优先使用 Function Calling（如果模型支持）
+        if self._llm.supports_function_calling:
+            return await self._generate_via_function_calling(
+                system_prompt, user_prompt, user_input
+            )
+
+        # 文本 JSON 模式（原逻辑）
+        return await self._generate_via_text_json(
+            system_prompt, user_prompt, user_input
+        )
+
+    async def _generate_via_function_calling(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        user_input: str,
+    ) -> tuple[Optional[Instruction], str, Optional[str], Optional[bool]]:
+        """通过 Function Calling 生成指令"""
+        from src.llm.client import ToolCallResult
+
+        result = await self._llm.generate_with_tools(
+            system_prompt, user_prompt, self._workers
+        )
+
+        if result is not None:
+            instruction = Instruction(
+                worker=result.worker,
+                action=result.action,
+                args=result.args,  # type: ignore[arg-type]
+                risk_level="safe",
+            )
+            valid, error = validate_instruction(instruction, self._workers)
+            if valid:
+                return instruction, "", result.thinking, result.is_final
+
+        # Function Calling 失败时，回退到文本 JSON
+        return await self._generate_via_text_json(
+            system_prompt, user_prompt, user_input
+        )
+
+    async def _generate_via_text_json(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        user_input: str,
+    ) -> tuple[Optional[Instruction], str, Optional[str], Optional[bool]]:
+        """通过文本 JSON 解析生成指令（原逻辑）"""
         llm_response = await self._llm.generate(system_prompt, user_prompt)
         instruction, error, thinking, is_final = self._parse_and_validate_instruction(llm_response)
         if instruction:
@@ -356,6 +404,7 @@ class ReactNodes:
             system_prompt = self._prompt_builder.build_system_prompt(
                 self._context,
                 available_workers=self._workers,
+                user_input=user_input,
             )
             # 在 user_prompt 中强制要求总结
             force_prompt = self._prompt_builder.build_user_prompt(
@@ -429,6 +478,7 @@ class ReactNodes:
                 system_prompt = self._prompt_builder.build_system_prompt(
                     self._context,
                     available_workers=self._workers,
+                    user_input=user_input,
                 )
                 user_prompt = self._prompt_builder.build_user_prompt(user_input, history=None)
 
@@ -517,6 +567,7 @@ class ReactNodes:
             system_prompt = self._prompt_builder.build_system_prompt(
                 self._context,
                 available_workers=self._workers,
+                user_input=user_input,
             )
             user_prompt = self._prompt_builder.build_user_prompt(
                 user_input, history=history, thinking_history=thinking_history

@@ -7,7 +7,7 @@ import re
 from typing import Optional
 
 from src.llm.client import LLMClient
-from src.types import ArgValue, WorkerResult, get_raw_output
+from src.types import ActionParam, ArgValue, ToolAction, WorkerResult, get_raw_output
 from src.workers.analyze_cache import (
     AnalyzeTemplate,
     AnalyzeTemplateCache,
@@ -56,8 +56,43 @@ class AnalyzeWorker(BaseWorker):
     def name(self) -> str:
         return "analyze"
 
+    @property
+    def description(self) -> str:
+        return (
+            "LLM-powered intelligent analysis of ops objects "
+            "(docker containers, processes, ports, files, systemd services, network)"
+        )
+
     def get_capabilities(self) -> list[str]:
         return ["explain"]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="explain",
+                description=(
+                    "Analyze and explain an ops object (container, process, port, file, "
+                    "systemd service, network) using LLM. Auto-detects type if not specified."
+                ),
+                params=[
+                    ActionParam(
+                        name="target",
+                        param_type="string",
+                        description="Object identifier: container name, PID, port number, file path, "
+                        "service name, or network interface",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="type",
+                        param_type="string",
+                        description="Object type: docker, process, port, file, systemd, network. "
+                        "Omit to auto-detect from target.",
+                        required=False,
+                    ),
+                ],
+                risk_level="safe",
+            ),
+        ]
 
     def _detect_target_type(self, target_name: str) -> str:
         """根据目标名称猜测对象类型

@@ -20,6 +20,10 @@ class LLMConfig(BaseModel):
     timeout: int = Field(default=30, description="超时时间(秒)")
     max_tokens: int = Field(default=2048, description="最大 token 数")
     temperature: float = Field(default=0.2, description="采样温度（建议 0-0.3）")
+    supports_function_calling: bool = Field(
+        default=False, description="模型是否支持 Function Calling"
+    )
+    context_window: int = Field(default=8192, description="模型上下文窗口大小")
 
 
 class SafetyConfig(BaseModel):

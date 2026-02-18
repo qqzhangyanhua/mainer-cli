@@ -250,3 +250,24 @@ class HistoryWritable(Protocol):
 
     def write(self, content: object) -> None: ...
     def clear(self) -> None: ...
+
+
+# ======== Worker 自文档化类型 ========
+
+
+class ActionParam(BaseModel):
+    """Worker Action 的参数描述"""
+
+    name: str = Field(..., description="参数名")
+    param_type: str = Field(..., description="参数类型: string, integer, boolean, array")
+    description: str = Field(default="", description="参数说明")
+    required: bool = Field(default=True, description="是否必填")
+
+
+class ToolAction(BaseModel):
+    """Worker 支持的 Action 描述"""
+
+    name: str = Field(..., description="Action 名称")
+    description: str = Field(default="", description="Action 说明")
+    params: list[ActionParam] = Field(default_factory=list, description="参数列表")
+    risk_level: RiskLevel = Field(default="safe", description="默认风险等级")

@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import Union, cast
 
-from src.types import ArgValue, WorkerResult
+from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 from src.workers.path_utils import normalize_path
 from src.workers.shell import ShellWorker
@@ -39,8 +39,46 @@ class GitWorker(BaseWorker):
     def name(self) -> str:
         return "git"
 
+    @property
+    def description(self) -> str:
+        return "Git operations: clone, pull, status"
+
     def get_capabilities(self) -> list[str]:
         return ["clone", "pull", "status"]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="clone",
+                description="Clone a Git repository. Use target_dir for explicit destination.",
+                params=[
+                    ActionParam(name="url", param_type="string", description="Repository URL (https or git@)", required=True),
+                    ActionParam(
+                        name="target_dir",
+                        param_type="string",
+                        description="Directory to clone into. Default: current directory.",
+                        required=False,
+                    ),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="pull",
+                description="Pull latest changes in an existing repository.",
+                params=[
+                    ActionParam(name="repo_dir", param_type="string", description="Path to repository directory", required=True),
+                ],
+                risk_level="medium",
+            ),
+            ToolAction(
+                name="status",
+                description="Show git status (working tree state).",
+                params=[
+                    ActionParam(name="repo_dir", param_type="string", description="Path to repository directory", required=True),
+                ],
+                risk_level="safe",
+            ),
+        ]
 
     def _extract_repo_name(self, url: str) -> str:
         """从 Git URL 提取仓库名

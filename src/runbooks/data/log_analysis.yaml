@@ -1,0 +1,26 @@
+name: log_analysis
+description: "Log analysis — find errors, patterns, and recent activity"
+keywords:
+  - 日志
+  - log
+  - 错误
+  - error
+  - 报错
+  - 异常
+  - exception
+  - fatal
+  - panic
+  - 查看日志
+steps:
+  - description: "Quick scan of recent logs"
+    command: "tail -50 {logfile}"
+    risk: safe
+  - description: "Extract errors and warnings"
+    command: "grep -iE 'error|fatal|fail|panic|exception' {logfile} | tail -20"
+    risk: safe
+  - description: "Count errors by pattern"
+    command: "grep -ic 'error' {logfile}"
+    risk: safe
+  - description: "Check systemd journal (if applicable)"
+    command: "journalctl -u {service} --no-pager -n 50 --since '1 hour ago' 2>/dev/null"
+    risk: safe

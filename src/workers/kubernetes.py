@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Union, cast
 
-from src.types import ArgValue, WorkerResult
+from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 from src.workers.shell import ShellWorker
 
@@ -29,8 +29,76 @@ class KubernetesWorker(BaseWorker):
     def name(self) -> str:
         return "kubernetes"
 
+    @property
+    def description(self) -> str:
+        return "Kubernetes operations via kubectl: get, describe, logs, top, rollout, scale"
+
     def get_capabilities(self) -> list[str]:
         return ["get", "describe", "logs", "top", "rollout", "scale"]
+
+    def get_actions(self) -> list[ToolAction]:
+        return [
+            ToolAction(
+                name="get",
+                description="Get resource list (pods, deployments, services, etc.) via kubectl.",
+                params=[
+                    ActionParam(name="resource", param_type="string", description="Resource type: pods, deployments, services, etc.", required=False),
+                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
+                    ActionParam(name="label", param_type="string", description="Label selector (-l)", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="describe",
+                description="Describe a resource in detail.",
+                params=[
+                    ActionParam(name="resource", param_type="string", description="Resource type (e.g. pod, deployment)", required=False),
+                    ActionParam(name="name", param_type="string", description="Resource name", required=True),
+                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="logs",
+                description="Get logs from a Pod.",
+                params=[
+                    ActionParam(name="pod", param_type="string", description="Pod name", required=True),
+                    ActionParam(name="container", param_type="string", description="Container name if multi-container pod", required=False),
+                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
+                    ActionParam(name="tail", param_type="integer", description="Number of trailing lines. Default 100.", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="top",
+                description="Show resource usage (CPU, memory) for pods or nodes.",
+                params=[
+                    ActionParam(name="resource", param_type="string", description="pods or nodes. Default pods.", required=False),
+                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
+                ],
+                risk_level="safe",
+            ),
+            ToolAction(
+                name="rollout",
+                description="Manage deployments: status, restart, undo, history.",
+                params=[
+                    ActionParam(name="subcmd", param_type="string", description="status | restart | undo | history", required=False),
+                    ActionParam(name="deployment", param_type="string", description="Deployment name", required=True),
+                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
+                ],
+                risk_level="medium",
+            ),
+            ToolAction(
+                name="scale",
+                description="Scale deployment replica count.",
+                params=[
+                    ActionParam(name="deployment", param_type="string", description="Deployment name", required=True),
+                    ActionParam(name="replicas", param_type="integer", description="Desired replica count", required=True),
+                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
+                ],
+                risk_level="medium",
+            ),
+        ]
 
     async def _check_kubectl(self) -> bool:
         result = await self._shell.execute(
