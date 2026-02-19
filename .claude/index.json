@@ -1,0 +1,227 @@
+{
+  "timestamp": "2026-02-19T21:48:49+08:00",
+  "project": "opsai",
+  "version": "0.2.0",
+  "language": "Python",
+  "root_claude_md": "CLAUDE.md",
+  "modules": [
+    {
+      "path": "src/orchestrator",
+      "claude_md": "src/orchestrator/CLAUDE.md",
+      "entry": "src/orchestrator/engine.py",
+      "interfaces": [
+        "src/orchestrator/engine.py",
+        "src/orchestrator/prompt.py",
+        "src/orchestrator/safety.py"
+      ],
+      "tests": [
+        "tests/test_engine.py",
+        "tests/test_prompt.py",
+        "tests/test_safety.py",
+        "tests/test_risk_analyzer.py",
+        "tests/test_command_whitelist.py",
+        "tests/test_policy_engine.py",
+        "tests/test_preprocessor_identity.py",
+        "tests/test_preprocessor_monitor.py",
+        "tests/test_scenarios.py",
+        "tests/test_error_helper.py",
+        "tests/test_react_graph.py",
+        "tests/test_refactoring.py"
+      ],
+      "important_files": [
+        "src/orchestrator/graph/react_graph.py",
+        "src/orchestrator/graph/react_state.py",
+        "src/orchestrator/graph/react_nodes.py",
+        "src/orchestrator/reason_strategies.py",
+        "src/orchestrator/policy_engine.py",
+        "src/orchestrator/command_whitelist.py",
+        "src/orchestrator/preprocessor.py"
+      ],
+      "coverage": "complete"
+    },
+    {
+      "path": "src/workers",
+      "claude_md": "src/workers/CLAUDE.md",
+      "entry": "src/workers/base.py",
+      "interfaces": [
+        "src/workers/base.py",
+        "src/workers/system.py",
+        "src/workers/shell.py",
+        "src/workers/container.py",
+        "src/workers/deploy/worker.py",
+        "src/workers/monitor.py"
+      ],
+      "tests": [
+        "tests/test_workers_base.py",
+        "tests/test_workers_system.py",
+        "tests/test_workers_shell.py",
+        "tests/test_workers_audit.py",
+        "tests/test_container_worker.py",
+        "tests/test_compose.py",
+        "tests/test_deploy_worker.py",
+        "tests/test_deploy_executor.py",
+        "tests/test_deploy_integration.py",
+        "tests/test_deploy_intent.py",
+        "tests/test_deploy_project_type.py",
+        "tests/test_deploy_verification.py",
+        "tests/test_deploy_prompt.py",
+        "tests/test_analyze_worker.py",
+        "tests/test_analyze_integration.py",
+        "tests/test_monitor_worker.py",
+        "tests/test_http_worker.py",
+        "tests/test_log_analyzer.py",
+        "tests/test_notifier.py",
+        "tests/test_remote.py",
+        "tests/test_kubernetes.py",
+        "tests/test_file_operations.py",
+        "tests/test_path_utils.py"
+      ],
+      "important_files": [
+        "src/workers/analyze.py",
+        "src/workers/analyze_cache.py",
+        "src/workers/log_analyzer.py",
+        "src/workers/http.py",
+        "src/workers/git.py",
+        "src/workers/kubernetes.py",
+        "src/workers/remote.py",
+        "src/workers/notifier.py",
+        "src/workers/file_ops.py",
+        "src/workers/chat.py",
+        "src/workers/deploy/planner.py",
+        "src/workers/deploy/executor.py",
+        "src/workers/deploy/diagnose.py"
+      ],
+      "coverage": "complete"
+    },
+    {
+      "path": "src/tui",
+      "claude_md": "src/tui/CLAUDE.md",
+      "entry": "src/tui/app.py",
+      "interfaces": [
+        "src/tui/app.py",
+        "src/tui/screens.py"
+      ],
+      "tests": [
+        "tests/test_tui.py",
+        "tests/test_dashboard.py"
+      ],
+      "important_files": [
+        "src/tui/widgets.py",
+        "src/tui/commands.py",
+        "src/tui/dashboard.py"
+      ],
+      "coverage": "complete"
+    },
+    {
+      "path": "src/config",
+      "claude_md": "src/config/CLAUDE.md",
+      "entry": "src/config/manager.py",
+      "interfaces": [
+        "src/config/manager.py"
+      ],
+      "tests": [
+        "tests/test_config.py"
+      ],
+      "important_files": [],
+      "coverage": "complete"
+    },
+    {
+      "path": "src/llm",
+      "claude_md": "src/llm/CLAUDE.md",
+      "entry": "src/llm/client.py",
+      "interfaces": [
+        "src/llm/client.py",
+        "src/llm/presets.py"
+      ],
+      "tests": [
+        "tests/test_llm_client.py"
+      ],
+      "important_files": [],
+      "coverage": "complete"
+    },
+    {
+      "path": "src/context",
+      "claude_md": "src/context/CLAUDE.md",
+      "entry": "src/context/environment.py",
+      "interfaces": [
+        "src/context/environment.py",
+        "src/context/memory.py",
+        "src/context/detector.py"
+      ],
+      "tests": [
+        "tests/test_context.py",
+        "tests/test_memory.py",
+        "tests/test_change_tracker.py",
+        "tests/test_detector.py"
+      ],
+      "important_files": [
+        "src/context/change_tracker.py"
+      ],
+      "coverage": "complete"
+    },
+    {
+      "path": "src/templates",
+      "claude_md": "src/templates/CLAUDE.md",
+      "entry": "src/templates/manager.py",
+      "interfaces": [
+        "src/templates/manager.py"
+      ],
+      "tests": [
+        "tests/test_templates.py"
+      ],
+      "important_files": [
+        "src/templates/executor.py"
+      ],
+      "coverage": "complete"
+    },
+    {
+      "path": "src/runbooks",
+      "claude_md": "src/runbooks/CLAUDE.md",
+      "entry": "src/runbooks/loader.py",
+      "interfaces": [
+        "src/runbooks/loader.py"
+      ],
+      "tests": [
+        "tests/test_runbook.py"
+      ],
+      "important_files": [
+        "src/runbooks/data/service_health.yaml",
+        "src/runbooks/data/container_troubleshoot.yaml",
+        "src/runbooks/data/performance.yaml",
+        "src/runbooks/data/disk_cleanup.yaml",
+        "src/runbooks/data/network_troubleshoot.yaml",
+        "src/runbooks/data/log_analysis.yaml"
+      ],
+      "coverage": "complete"
+    },
+    {
+      "path": "src/scheduler",
+      "claude_md": "src/scheduler/CLAUDE.md",
+      "entry": "src/scheduler/scheduler.py",
+      "interfaces": [
+        "src/scheduler/scheduler.py"
+      ],
+      "tests": [
+        "tests/test_scheduler.py"
+      ],
+      "important_files": [],
+      "coverage": "complete"
+    }
+  ],
+  "scan_stats": {
+    "total_source_files": 68,
+    "total_test_files": 53,
+    "scanned_source_files": 68,
+    "scanned_test_files": 53,
+    "coverage_percent": 100,
+    "truncated": false
+  },
+  "ignored_stats": {
+    "venv_files": "skipped (.venv/)",
+    "mypy_cache": "skipped (.mypy_cache/)",
+    "pytest_cache": "skipped (.pytest_cache/)",
+    "pycache": "skipped (__pycache__/)"
+  },
+  "gaps": [],
+  "next_steps": []
+}
