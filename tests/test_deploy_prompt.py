@@ -40,7 +40,7 @@ class TestDeployPrompt:
         prompt_builder: PromptBuilder,
         context: EnvironmentContext,
     ) -> None:
-        """测试部署 Prompt 包含部署指引"""
+        """测试部署 Prompt 包含部署原则"""
         prompt = prompt_builder.build_deploy_prompt(
             context,
             repo_url="https://github.com/user/repo",
@@ -48,7 +48,7 @@ class TestDeployPrompt:
         )
 
         assert "Dockerfile" in prompt
-        assert "git clone" in prompt.lower()
+        assert "docker" in prompt.lower()
 
     def test_deploy_prompt_includes_repo_url(
         self,

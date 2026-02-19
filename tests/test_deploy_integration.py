@@ -110,7 +110,7 @@ class TestDeployPromptSelection:
 
         assert "fetch_github_readme" in prompt
         assert "list_github_files" in prompt
-        assert "git clone" in prompt.lower()
+        assert "docker" in prompt.lower()
 
     def test_deploy_prompt_includes_repo_url(self) -> None:
         """测试部署 Prompt 包含仓库 URL"""
