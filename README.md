@@ -92,7 +92,31 @@ pip install opsai
 uv tool install opsai
 ```
 
-### 1.1 克隆仓库后一键安装（推荐开发/自托管）
+### 1.1 Docker 部署（推荐云服务器）
+
+无需安装 Python 环境，clone 后直接运行：
+
+```bash
+git clone https://github.com/yourusername/opsai.git
+cd opsai
+
+# 构建镜像
+docker compose build
+
+# 启动 TUI 交互模式
+docker compose run --rm -e OPSAI_API_KEY=sk-xxx tui
+
+# 或单次查询
+docker compose run --rm -e OPSAI_API_KEY=sk-xxx cli query "检查磁盘使用情况"
+```
+
+说明：
+- 容器挂载宿主机 `/proc`、`/sys`、`/var/log`，psutil 可直接读取宿主机数据
+- Docker socket 挂载到容器内，支持管理宿主机 Docker 容器
+- 配置和审计日志持久化到 `opsai-data` volume（`/root/.opsai`）
+- 首次运行通过 `OPSAI_API_KEY` 环境变量自动配置，也可传 `OPSAI_PRESET` 指定模型预设（默认 `deepseek-chat`）
+
+### 1.2 克隆仓库后一键安装（推荐开发/自托管）
 
 ```bash
 git clone https://github.com/yourusername/opsai.git

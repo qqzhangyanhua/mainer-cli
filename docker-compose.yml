@@ -1,0 +1,38 @@
+services:
+  tui:
+    build: .
+    stdin_open: true
+    tty: true
+    command: ["opsai-tui"]
+    pid: host
+    cap_add:
+      - SYS_PTRACE
+    volumes:
+      - /proc:/proc:ro
+      - /sys:/sys:ro
+      - /var/log:/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - opsai-data:/root/.opsai
+    environment:
+      - OPSAI_API_KEY
+      - OPSAI_PRESET
+      - TERM=xterm-256color
+
+  cli:
+    build: .
+    entrypoint: ["docker-entrypoint.sh", "opsai"]
+    pid: host
+    cap_add:
+      - SYS_PTRACE
+    volumes:
+      - /proc:/proc:ro
+      - /sys:/sys:ro
+      - /var/log:/var/log:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - opsai-data:/root/.opsai
+    environment:
+      - OPSAI_API_KEY
+      - OPSAI_PRESET
+
+volumes:
+  opsai-data:
