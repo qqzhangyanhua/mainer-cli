@@ -12,6 +12,7 @@ from rich.table import Table
 
 from src import __version__
 from src.config.manager import ConfigManager
+from src.orchestrator.prompt import INVENTORY_PATH
 from src.orchestrator.scenarios import ScenarioManager
 from src.tui.widgets import format_path, mask_secret
 from src.types import ConversationEntry, HistoryWritable
@@ -61,6 +62,7 @@ def show_help(history: HistoryWritable) -> None:
     history.write("/copy     - 复制输出（/copy all|N|mode）")
     history.write("/monitor  - 系统资源快照（CPU/内存/磁盘/负载）")
     history.write("/logs     - 日志分析（/logs <容器名> 或 /logs file <路径>）")
+    history.write("/init     - 生成服务器资产台账模板（~/.opsai/inventory.md）")
     history.write("/exit     - 退出")
     history.write("[dim]快捷键：Ctrl+C 退出，Ctrl+L 清空对话，Ctrl+Y 复制模式[/dim]")
 
@@ -474,3 +476,51 @@ def show_log_analysis(
     for line in result.message.split("\n")[1:]:
         if line.strip():
             history.write(f"[dim]{line}[/dim]")
+
+
+_INVENTORY_TEMPLATE = """\
+# 服务器资产台账
+
+> 在此记录服务器拓扑信息，OpsAI 将在每次对话时自动读取本文件作为运维上下文。
+> 格式不限，自由描述即可。以下为示例，请根据实际情况修改。
+
+## 生产环境
+
+### Web 服务器 (192.168.1.100)
+- Nginx 反向代理，端口 80/443
+- 前端静态资源：OSS 同步到 /opt/html
+- SSL 证书：Let's Encrypt，自动续期
+
+### 应用服务器 (192.168.1.101)
+- 后端 API：Spring Boot，端口 8080，部署在 /opt/api
+- 使用 systemd 管理，服务名 api.service
+- JDK 17，JVM 参数：-Xmx2g
+
+### 数据库服务器 (192.168.1.102)
+- MySQL 8.0，端口 3306
+- 数据目录：/var/lib/mysql
+- 每日凌晨 3 点全量备份到 /backup/mysql/
+
+## 测试环境
+
+### 测试服务器 (10.0.0.10)
+- Docker Compose 部署，项目目录 /opt/test-app
+- 包含：nginx + api + mysql + redis
+"""
+
+
+def handle_init_inventory(history: HistoryWritable) -> None:
+    """生成服务器资产台账模板文件"""
+    if INVENTORY_PATH.exists():
+        history.write(
+            f"[yellow]资产台账已存在：{format_path(INVENTORY_PATH)}[/yellow]"
+        )
+        history.write("[dim]如需重新生成，请先手动删除该文件[/dim]")
+        return
+
+    INVENTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    INVENTORY_PATH.write_text(_INVENTORY_TEMPLATE, encoding="utf-8")
+    history.write(
+        f"[green]已生成资产台账模板：{format_path(INVENTORY_PATH)}[/green]"
+    )
+    history.write("[dim]请编辑该文件，填入实际的服务器信息[/dim]")

@@ -690,6 +690,11 @@ class OpsAIApp(App[str]):
         if command in {"dashboard", "dash"}:
             self._open_dashboard()
             return True
+        if command == "init":
+            from src.tui.commands import handle_init_inventory
+
+            handle_init_inventory(writer)
+            return True
 
         return False
 
@@ -1077,6 +1082,7 @@ class OpsAIApp(App[str]):
             ("/monitor", "系统资源快照（CPU/内存/磁盘/负载）", ""),
             ("/dashboard", "实时健康仪表盘（自动刷新）", ""),
             ("/logs", "日志分析（/logs <容器名> 或 /logs file <路径>）", ""),
+            ("/init", "生成服务器资产台账模板（~/.opsai/inventory.md）", ""),
             ("/exit", "退出", ""),
         ]
 
