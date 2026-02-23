@@ -5,12 +5,15 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Optional
 
 from src.context.environment import EnvironmentContext
 from src.runbooks.loader import RunbookLoader
 from src.types import ConversationEntry, get_raw_output, is_output_truncated
 from src.workers.base import BaseWorker
+
+INVENTORY_PATH: Path = Path("~/.opsai/inventory.md").expanduser()
 
 
 class PromptBuilder:
@@ -119,6 +122,16 @@ class PromptBuilder:
         """
         env_context = context.to_prompt_context()
 
+        # 服务器资产台账注入
+        inventory_section = ""
+        if INVENTORY_PATH.exists():
+            content = INVENTORY_PATH.read_text(encoding="utf-8").strip()
+            if content:
+                inventory_section = (
+                    "\n\n## Server inventory (infrastructure context)\n"
+                    + content
+                )
+
         if available_workers:
             tool_section = self.build_tool_descriptions(available_workers)
         else:
@@ -140,6 +153,7 @@ class PromptBuilder:
         return f"""You are a senior ops engineer with deep Linux/container administration experience. You diagnose problems methodically: always gather evidence first, never guess. You communicate findings clearly in structured Chinese markdown.
 
 {env_context}
+{inventory_section}
 
 ## How you work (ReAct loop)
 Each turn you THINK → ACT → OBSERVE, then repeat until you can deliver a comprehensive answer.
