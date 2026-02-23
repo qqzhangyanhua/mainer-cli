@@ -1,5 +1,9 @@
 """Prompt 模板测试"""
 
+from pathlib import Path
+
+import pytest
+
 from src.context.environment import EnvironmentContext
 from src.orchestrator.prompt import PromptBuilder
 from src.types import ConversationEntry, Instruction, WorkerResult
@@ -164,3 +168,39 @@ class TestPromptBuilder:
         # 验证关键原则：真实数据驱动、不猜测
         assert "NEVER guess" in prompt
         assert "Commands first" in prompt or "shell.execute_command" in prompt
+
+    def test_inventory_injected_when_file_exists(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """inventory.md 存在时，system prompt 包含其内容"""
+        inventory_file = tmp_path / "inventory.md"
+        inventory_file.write_text(
+            "# 生产环境\n## 服务器 A (192.168.1.100)\n- Nginx: /opt/html\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "src.orchestrator.prompt.INVENTORY_PATH", inventory_file
+        )
+
+        builder = PromptBuilder()
+        context = EnvironmentContext()
+        prompt = builder.build_system_prompt(context)
+
+        assert "Server inventory" in prompt
+        assert "192.168.1.100" in prompt
+        assert "/opt/html" in prompt
+
+    def test_inventory_not_injected_when_file_missing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """inventory.md 不存在时，system prompt 无 inventory 段"""
+        missing_file = tmp_path / "inventory.md"
+        monkeypatch.setattr(
+            "src.orchestrator.prompt.INVENTORY_PATH", missing_file
+        )
+
+        builder = PromptBuilder()
+        context = EnvironmentContext()
+        prompt = builder.build_system_prompt(context)
+
+        assert "Server inventory" not in prompt
