@@ -45,8 +45,10 @@ class SystemWorker(BaseWorker):
                 description="List files in a directory",
                 params=[
                     ActionParam(
-                        name="path", param_type="string",
-                        description="Directory path (default: .)", required=False,
+                        name="path",
+                        param_type="string",
+                        description="Directory path (default: .)",
+                        required=False,
                     ),
                 ],
             ),
@@ -55,12 +57,16 @@ class SystemWorker(BaseWorker):
                 description="Find files larger than a threshold",
                 params=[
                     ActionParam(
-                        name="path", param_type="string",
-                        description="Search root (default: .)", required=False,
+                        name="path",
+                        param_type="string",
+                        description="Search root (default: .)",
+                        required=False,
                     ),
                     ActionParam(
-                        name="min_size_mb", param_type="integer",
-                        description="Minimum size in MB (default: 100)", required=False,
+                        name="min_size_mb",
+                        param_type="integer",
+                        description="Minimum size in MB (default: 100)",
+                        required=False,
                     ),
                 ],
             ),
@@ -69,8 +75,10 @@ class SystemWorker(BaseWorker):
                 description="Check disk usage for a path",
                 params=[
                     ActionParam(
-                        name="path", param_type="string",
-                        description="Path to check (default: /)", required=False,
+                        name="path",
+                        param_type="string",
+                        description="Path to check (default: /)",
+                        required=False,
                     ),
                 ],
             ),
@@ -79,7 +87,8 @@ class SystemWorker(BaseWorker):
                 description="Delete specified files (not directories)",
                 params=[
                     ActionParam(
-                        name="files", param_type="array",
+                        name="files",
+                        param_type="array",
                         description="List of file paths to delete",
                     ),
                 ],
@@ -99,7 +108,9 @@ class SystemWorker(BaseWorker):
                 description="Append content to an existing file",
                 params=[
                     ActionParam(name="path", param_type="string", description="File path"),
-                    ActionParam(name="content", param_type="string", description="Content to append"),
+                    ActionParam(
+                        name="content", param_type="string", description="Content to append"
+                    ),
                 ],
                 risk_level="medium",
             ),
@@ -109,7 +120,9 @@ class SystemWorker(BaseWorker):
                 params=[
                     ActionParam(name="path", param_type="string", description="File path"),
                     ActionParam(name="old_string", param_type="string", description="Text to find"),
-                    ActionParam(name="new_string", param_type="string", description="Replacement text"),
+                    ActionParam(
+                        name="new_string", param_type="string", description="Replacement text"
+                    ),
                 ],
                 risk_level="medium",
             ),
@@ -122,9 +135,12 @@ class SystemWorker(BaseWorker):
     ) -> WorkerResult:
         """执行系统操作"""
         # 检查 dry_run 模式
-        dry_run = args.get("dry_run", False)
-        if isinstance(dry_run, str):
-            dry_run = dry_run.lower() == "true"
+        dry_run_value = args.get("dry_run", False)
+        dry_run = False
+        if isinstance(dry_run_value, bool):
+            dry_run = dry_run_value
+        elif isinstance(dry_run_value, str):
+            dry_run = dry_run_value.lower() == "true"
 
         handlers: dict[
             str,
@@ -147,7 +163,7 @@ class SystemWorker(BaseWorker):
             )
 
         try:
-            return await handler(args, dry_run=dry_run)
+            return await handler(args, dry_run)
         except Exception as e:
             return WorkerResult(
                 success=False,
@@ -225,7 +241,9 @@ class SystemWorker(BaseWorker):
         if dry_run:
             return WorkerResult(
                 success=True,
-                message=f"[DRY-RUN] Would search for files larger than {min_size_mb}MB in {path_str}",
+                message=(
+                    f"[DRY-RUN] Would search for files larger than {min_size_mb}MB in {path_str}"
+                ),
                 simulated=True,
             )
 
@@ -325,7 +343,11 @@ class SystemWorker(BaseWorker):
         if dry_run:
             return WorkerResult(
                 success=True,
-                message=f"[DRY-RUN] Would delete {len(files)} files: {', '.join(str(f) for f in files[:3])}{'...' if len(files) > 3 else ''}",
+                message=(
+                    f"[DRY-RUN] Would delete {len(files)} files: "
+                    f"{', '.join(str(f) for f in files[:3])}"
+                    f"{'...' if len(files) > 3 else ''}"
+                ),
                 simulated=True,
             )
 

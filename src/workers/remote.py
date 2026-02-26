@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import ModuleType
 from typing import Optional, Union, cast
+
+try:
+    import asyncssh as asyncssh_module  # type: ignore[import-not-found]
+except ImportError:
+    asyncssh: ModuleType | None = None
+else:
+    asyncssh = asyncssh_module
 
 from src.config.manager import RemoteConfig
 from src.types import ArgValue, HostConfig, WorkerResult
@@ -95,12 +103,14 @@ class RemoteWorker(BaseWorker):
 
         hosts_data: list[dict[str, Union[str, int]]] = []
         for addr, host in self._hosts.items():
-            hosts_data.append({
-                "address": addr,
-                "port": host.port,
-                "user": host.user,
-                "labels": ", ".join(host.labels) if host.labels else "",
-            })
+            hosts_data.append(
+                {
+                    "address": addr,
+                    "port": host.port,
+                    "user": host.user,
+                    "labels": ", ".join(host.labels) if host.labels else "",
+                }
+            )
 
         lines = ["已配置的远程主机:"]
         for h in hosts_data:
@@ -116,9 +126,7 @@ class RemoteWorker(BaseWorker):
 
     async def _test_connection(self, args: dict[str, ArgValue]) -> WorkerResult:
         """测试 SSH 连接"""
-        try:
-            import asyncssh
-        except ImportError:
+        if asyncssh is None:
             return WorkerResult(
                 success=False,
                 message="asyncssh 未安装。运行: uv pip install asyncssh",
@@ -148,7 +156,7 @@ class RemoteWorker(BaseWorker):
             if key_path:
                 conn_kwargs["client_keys"] = [key_path]
 
-            async with asyncssh.connect(**conn_kwargs) as conn:  # type: ignore[arg-type]
+            async with asyncssh.connect(**conn_kwargs) as conn:
                 result = await conn.run("echo ok", timeout=5)
                 if result.exit_status == 0:
                     return WorkerResult(
@@ -173,9 +181,7 @@ class RemoteWorker(BaseWorker):
 
     async def _execute_remote(self, args: dict[str, ArgValue]) -> WorkerResult:
         """在远程主机上执行命令"""
-        try:
-            import asyncssh
-        except ImportError:
+        if asyncssh is None:
             return WorkerResult(
                 success=False,
                 message="asyncssh 未安装。运行: uv pip install asyncssh",
@@ -203,9 +209,7 @@ class RemoteWorker(BaseWorker):
         if dry_run:
             return WorkerResult(
                 success=True,
-                message=(
-                    f"[DRY-RUN] Would execute on {host.user}@{host.address}: {command}"
-                ),
+                message=(f"[DRY-RUN] Would execute on {host.user}@{host.address}: {command}"),
                 simulated=True,
             )
 
@@ -222,10 +226,8 @@ class RemoteWorker(BaseWorker):
             if key_path:
                 conn_kwargs["client_keys"] = [key_path]
 
-            async with asyncssh.connect(**conn_kwargs) as conn:  # type: ignore[arg-type]
-                result = await conn.run(
-                    command, timeout=self._config.command_timeout
-                )
+            async with asyncssh.connect(**conn_kwargs) as conn:
+                result = await conn.run(command, timeout=self._config.command_timeout)
                 stdout = result.stdout or ""
                 stderr = result.stderr or ""
                 exit_code = result.exit_status or 0
@@ -274,7 +276,6 @@ class RemoteWorker(BaseWorker):
             return WorkerResult(
                 success=False,
                 message=(
-                    f"命令超时（>{self._config.command_timeout}s）: "
-                    f"{host.address} - {command}"
+                    f"命令超时（>{self._config.command_timeout}s）: {host.address} - {command}"
                 ),
             )

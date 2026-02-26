@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -240,17 +241,14 @@ def export_history(
                 export_path = Path(args[1]).expanduser()
         else:
             export_path = Path(args[0]).expanduser()
-            if export_path.suffix.lower() == ".md":
-                export_format = "md"
-            else:
-                export_format = "json"
+            export_format = "md" if export_path.suffix.lower() == ".md" else "json"
 
     if export_path is None:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         filename = f"opsai-history-{timestamp}.{export_format}"
         export_path = Path.cwd() / filename
 
-    export_data = {
+    export_data: dict[str, object] = {
         "exported_at": datetime.now().isoformat(timespec="seconds"),
         "version": __version__,
         "model": config_model,
@@ -321,17 +319,13 @@ def show_monitor_snapshot(history: HistoryWritable) -> None:
     worker = MonitorWorker()
 
     try:
-        result = asyncio.get_event_loop().run_until_complete(
-            worker.execute("snapshot", {})
-        )
+        result = asyncio.get_event_loop().run_until_complete(worker.execute("snapshot", {}))
     except RuntimeError:
         # 已在 async 上下文中，用 asyncio.run 的替代方案
         import concurrent.futures
 
         with concurrent.futures.ThreadPoolExecutor() as pool:
-            result = pool.submit(
-                asyncio.run, worker.execute("snapshot", {})
-            ).result()
+            result = pool.submit(asyncio.run, worker.execute("snapshot", {})).result()
 
     if not result.success or not isinstance(result.data, list):
         history.write(f"[red]监控快照失败: {result.message}[/red]")
@@ -403,10 +397,8 @@ def show_log_analysis(
             i += 2
             continue
         if arg == "--tail" and i + 1 < len(args):
-            try:
+            with contextlib.suppress(ValueError):
                 tail_n = int(args[i + 1])
-            except ValueError:
-                pass
             i += 2
             continue
         if "container" not in worker_args and action == "analyze_container":
@@ -422,7 +414,8 @@ def show_log_analysis(
     except RuntimeError:
         with concurrent.futures.ThreadPoolExecutor() as pool:
             result = pool.submit(
-                asyncio.run, worker.execute(action, worker_args)  # type: ignore[arg-type]
+                asyncio.run,
+                worker.execute(action, worker_args),  # type: ignore[arg-type]
             ).result()
 
     if not result.success:
@@ -434,7 +427,11 @@ def show_log_analysis(
 
     if isinstance(result.data, list) and result.data:
         # 级别分布表
-        level_rows = [r for r in result.data if isinstance(r, dict) and str(r.get("name", "")).startswith("level_")]
+        level_rows = [
+            r
+            for r in result.data
+            if isinstance(r, dict) and str(r.get("name", "")).startswith("level_")
+        ]
         if level_rows:
             level_table = Table(title="级别分布", expand=False)
             level_table.add_column("级别", style="cyan")
@@ -457,7 +454,11 @@ def show_log_analysis(
             history.write(level_table)
 
         # 错误模式表
-        error_rows = [r for r in result.data if isinstance(r, dict) and str(r.get("name", "")).startswith("error_")]
+        error_rows = [
+            r
+            for r in result.data
+            if isinstance(r, dict) and str(r.get("name", "")).startswith("error_")
+        ]
         if error_rows:
             error_table = Table(title="Top 错误模式", expand=True)
             error_table.add_column("#", style="dim", width=3)
@@ -512,15 +513,11 @@ _INVENTORY_TEMPLATE = """\
 def handle_init_inventory(history: HistoryWritable) -> None:
     """生成服务器资产台账模板文件"""
     if INVENTORY_PATH.exists():
-        history.write(
-            f"[yellow]资产台账已存在：{format_path(INVENTORY_PATH)}[/yellow]"
-        )
+        history.write(f"[yellow]资产台账已存在：{format_path(INVENTORY_PATH)}[/yellow]")
         history.write("[dim]如需重新生成，请先手动删除该文件[/dim]")
         return
 
     INVENTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
     INVENTORY_PATH.write_text(_INVENTORY_TEMPLATE, encoding="utf-8")
-    history.write(
-        f"[green]已生成资产台账模板：{format_path(INVENTORY_PATH)}[/green]"
-    )
+    history.write(f"[green]已生成资产台账模板：{format_path(INVENTORY_PATH)}[/green]")
     history.write("[dim]请编辑该文件，填入实际的服务器信息[/dim]")

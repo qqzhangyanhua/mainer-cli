@@ -15,7 +15,8 @@ class AuditWorker(BaseWorker):
 
     采用追加式文本文件，便于 grep 和 tail 分析
     日志格式:
-    [时间戳] INPUT: <原始指令> | WORKER: <worker>.<action> | RISK: <level> | CONFIRMED: <yes/no> | EXIT: <code> | OUTPUT: <前100字符>
+    [时间戳] INPUT: <原始指令> | WORKER: <worker>.<action> | RISK: <level>
+    | CONFIRMED: <yes/no> | EXIT: <code> | OUTPUT: <前100字符>
     """
 
     def __init__(
@@ -52,13 +53,48 @@ class AuditWorker(BaseWorker):
                 name="log_operation",
                 description="Record an operation to the append-only audit log for compliance.",
                 params=[
-                    ActionParam(name="input", param_type="string", description="Original user input/instruction", required=True),
-                    ActionParam(name="worker", param_type="string", description="Worker that executed (e.g. container, system)", required=True),
-                    ActionParam(name="action", param_type="string", description="Action that was executed", required=True),
-                    ActionParam(name="risk", param_type="string", description="Risk level: safe, medium, or high", required=True),
-                    ActionParam(name="confirmed", param_type="string", description="Whether user confirmed (yes/no)", required=True),
-                    ActionParam(name="exit_code", param_type="integer", description="Exit/result code", required=False),
-                    ActionParam(name="output", param_type="string", description="Brief output summary (first 100 chars)", required=False),
+                    ActionParam(
+                        name="input",
+                        param_type="string",
+                        description="Original user input/instruction",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="worker",
+                        param_type="string",
+                        description="Worker that executed (e.g. container, system)",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="action",
+                        param_type="string",
+                        description="Action that was executed",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="risk",
+                        param_type="string",
+                        description="Risk level: safe, medium, or high",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="confirmed",
+                        param_type="string",
+                        description="Whether user confirmed (yes/no)",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="exit_code",
+                        param_type="integer",
+                        description="Exit/result code",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="output",
+                        param_type="string",
+                        description="Brief output summary (first 100 chars)",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),

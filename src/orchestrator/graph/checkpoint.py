@@ -4,19 +4,32 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Union
+from typing import Optional, Protocol, Union, cast
 
 from langgraph.checkpoint.memory import MemorySaver
 
 # SqliteSaver 可能在独立包中，尝试导入
 try:
-    from langgraph.checkpoint.sqlite import SqliteSaver
+    from langgraph.checkpoint.sqlite import (  # type: ignore[import-not-found]
+        SqliteSaver as SqliteSaverImpl,
+    )
 
     SQLITE_AVAILABLE = True
 except ImportError:
-    # 如果 SqliteSaver 不可用，定义占位符类型
-    SqliteSaver = None  # type: ignore[assignment,misc]
+    SqliteSaverImpl = None
     SQLITE_AVAILABLE = False
+
+
+class SqliteSaverProtocol(Protocol):
+    """SqliteSaver 接口"""
+
+    @classmethod
+    def from_conn_string(cls, conn_string: str) -> MemorySaver: ...
+
+
+SqliteSaver: Optional[type[SqliteSaverProtocol]] = (
+    cast(type[SqliteSaverProtocol], SqliteSaverImpl) if SqliteSaverImpl else None
+)
 
 
 def get_checkpoint_saver(
@@ -62,7 +75,7 @@ def get_checkpoint_saver(
     conn_string = f"sqlite:///{db_path}"
 
     assert SqliteSaver is not None, "SqliteSaver should be available"
-    return SqliteSaver.from_conn_string(conn_string)  # type: ignore[return-value]
+    return SqliteSaver.from_conn_string(conn_string)
 
 
 def get_default_checkpoint_path() -> Path:
@@ -84,10 +97,7 @@ def clear_checkpoints(db_path: Union[str, Path, None] = None) -> bool:
     Returns:
         是否成功清空
     """
-    if db_path is None:
-        db_path = get_default_checkpoint_path()
-    else:
-        db_path = Path(db_path).expanduser()
+    db_path = get_default_checkpoint_path() if db_path is None else Path(db_path).expanduser()
 
     if not db_path.exists():
         return True

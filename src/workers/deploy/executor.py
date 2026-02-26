@@ -81,14 +81,8 @@ class DeployExecutor:
         """
         command = step.get("command", "")
         description = step.get("description", command)
-        if isinstance(command, str):
-            command = command.strip()
-        else:
-            command = ""
-        if isinstance(description, str):
-            description = description.strip()
-        else:
-            description = ""
+        command = command.strip() if isinstance(command, str) else ""
+        description = description.strip() if isinstance(description, str) else ""
         if not description:
             description = command or "未命名步骤"
 
@@ -109,15 +103,15 @@ class DeployExecutor:
                 {"command": current_command, "working_dir": project_dir},
             )
 
+            if result.success and self._is_start_docker_desktop_command(current_command):
+                self._report_progress("deploy", "    ⏳ 等待 Docker daemon 就绪...")
+                ready = await self._wait_for_docker_ready()
+                if not ready:
+                    return (
+                        False,
+                        "✗ Docker Desktop 启动后仍未就绪，请手动确认 Docker 已启动后重试",
+                    )
             if result.success:
-                if self._is_start_docker_desktop_command(current_command):
-                    self._report_progress("deploy", "    ⏳ 等待 Docker daemon 就绪...")
-                    ready = await self._wait_for_docker_ready()
-                    if not ready:
-                        return (
-                            False,
-                            "✗ Docker Desktop 启动后仍未就绪，请手动确认 Docker 已启动后重试",
-                        )
                 msg = f"✓ {description}"
                 if fix_notes:
                     msg += "\n" + "\n".join(f"    ⚠ {note}" for note in fix_notes)
@@ -291,25 +285,25 @@ class DeployExecutor:
                     max_iterations=2,
                 )
 
-                if fixed:
-                    if new_command:
-                        docker_run_command = new_command
-                        self._report_progress("deploy", "    🔄 执行修复后的命令...")
-                        run_result = await self._shell.execute(
-                            "execute_command",
-                            {"command": new_command, "working_dir": project_dir},
+                if fixed and new_command:
+                    docker_run_command = new_command
+                    self._report_progress("deploy", "    🔄 执行修复后的命令...")
+                    run_result = await self._shell.execute(
+                        "execute_command",
+                        {"command": new_command, "working_dir": project_dir},
+                    )
+                    if not run_result.success:
+                        self._report_progress(
+                            "deploy",
+                            f"    ❌ 修复命令执行失败: {run_result.message[:100]}",
                         )
-                        if not run_result.success:
-                            self._report_progress(
-                                "deploy",
-                                f"    ❌ 修复命令执行失败: {run_result.message[:100]}",
-                            )
-                            continue
+                        continue
 
+                if fixed:
                     await asyncio.sleep(2)
                     continue
-                else:
-                    self._report_progress("deploy", f"    ❌ 无法自动修复: {diagnose_msg[:100]}")
+
+                self._report_progress("deploy", f"    ❌ 无法自动修复: {diagnose_msg[:100]}")
 
             return (
                 False,
@@ -340,17 +334,18 @@ class DeployExecutor:
                 },
             )
 
-            if check_result.success:
+            if (
+                check_result.success
+                and check_result.message.strip()
+                and "running" in check_result.message.lower()
+            ):
                 # 简单检查：如果有输出且没有错误，认为服务在运行
-                if check_result.message.strip():
-                    # 检查是否有 running 状态
-                    if "running" in check_result.message.lower():
-                        self._report_progress("deploy", "    ✅ docker compose 服务运行中")
-                        return (
-                            True,
-                            "✅ docker compose 服务验证通过",
-                            {"deployment_type": "compose"},
-                        )
+                self._report_progress("deploy", "    ✅ docker compose 服务运行中")
+                return (
+                    True,
+                    "✅ docker compose 服务验证通过",
+                    {"deployment_type": "compose"},
+                )
 
             # 服务未运行，获取详细日志
             self._report_progress("deploy", "    ⚠️ docker compose 服务未运行，检查原因...")
@@ -385,24 +380,24 @@ class DeployExecutor:
                     max_iterations=2,
                 )
 
-                if fixed:
-                    if new_command:
-                        self._report_progress("deploy", "    🔄 执行修复后的命令...")
-                        run_result = await self._shell.execute(
-                            "execute_command",
-                            {"command": new_command, "working_dir": project_dir},
+                if fixed and new_command:
+                    self._report_progress("deploy", "    🔄 执行修复后的命令...")
+                    run_result = await self._shell.execute(
+                        "execute_command",
+                        {"command": new_command, "working_dir": project_dir},
+                    )
+                    if not run_result.success:
+                        self._report_progress(
+                            "deploy",
+                            f"    ❌ 修复命令执行失败: {run_result.message[:100]}",
                         )
-                        if not run_result.success:
-                            self._report_progress(
-                                "deploy",
-                                f"    ❌ 修复命令执行失败: {run_result.message[:100]}",
-                            )
-                            continue
+                        continue
 
+                if fixed:
                     await asyncio.sleep(2)
                     continue
-                else:
-                    self._report_progress("deploy", f"    ❌ 无法自动修复: {diagnose_msg[:100]}")
+
+                self._report_progress("deploy", f"    ❌ 无法自动修复: {diagnose_msg[:100]}")
 
         return False, f"docker compose 服务启动失败: {error_message[:200]}", None
 
@@ -460,7 +455,7 @@ class DeployExecutor:
             if os.path.getsize(file_path) > 100000:
                 return "(文件过大，跳过)"
 
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(file_path, encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()[:max_lines]
                 content = "".join(lines)
                 if len(lines) == max_lines:

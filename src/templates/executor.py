@@ -6,7 +6,7 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Optional, Union
 
-from src.templates.manager import TaskTemplate, TemplateStep
+from src.templates.manager import TaskTemplate
 from src.types import ArgValue, Instruction, WorkerResult
 
 
@@ -118,9 +118,7 @@ class RunbookExecutor:
                 self._progress_fn(idx, total, step.description or step.action)
 
             # 条件检查
-            if step.condition and not self._evaluate_condition(
-                step.condition, step_results
-            ):
+            if step.condition and not self._evaluate_condition(step.condition, step_results):
                 sr = StepResult(
                     step_index=idx,
                     step_key=step_key,
@@ -144,9 +142,7 @@ class RunbookExecutor:
             )
 
             # 执行（含重试）
-            sr = await self._execute_with_retry(
-                instruction, idx, step_key, step.retry_count
-            )
+            sr = await self._execute_with_retry(instruction, idx, step_key, step.retry_count)
 
             # 存储结果
             step_results[step_key] = sr
@@ -160,10 +156,9 @@ class RunbookExecutor:
             ctx[f"{step_key}.message"] = sr.message
 
             # 失败处理
-            if not sr.success:
-                if step.on_failure == "abort":
-                    result.aborted_at = idx
-                    break
+            if not sr.success and step.on_failure == "abort":
+                result.aborted_at = idx
+                break
                 # "skip" 继续执行下一步
 
         result.message = result.summary()
@@ -266,9 +261,7 @@ class RunbookExecutor:
         return result
 
     @staticmethod
-    def _resolve_ref(
-        ref_path: str, step_results: dict[str, StepResult]
-    ) -> ArgValue:
+    def _resolve_ref(ref_path: str, step_results: dict[str, StepResult]) -> ArgValue:
         """解析步骤引用路径 'step_key.field'"""
         parts = ref_path.split(".", 1)
         step_key = parts[0]
@@ -291,9 +284,7 @@ class RunbookExecutor:
         return f"<unresolved:{ref_path}>"
 
     @staticmethod
-    def _evaluate_condition(
-        condition: str, step_results: dict[str, StepResult]
-    ) -> bool:
+    def _evaluate_condition(condition: str, step_results: dict[str, StepResult]) -> bool:
         """评估条件表达式
 
         支持的格式：
@@ -326,9 +317,7 @@ class RunbookExecutor:
         return val == "true"
 
     @staticmethod
-    def _get_condition_value(
-        path: str, step_results: dict[str, StepResult]
-    ) -> str:
+    def _get_condition_value(path: str, step_results: dict[str, StepResult]) -> str:
         """从步骤结果中获取条件值"""
         parts = path.split(".", 1)
         step_key = parts[0]

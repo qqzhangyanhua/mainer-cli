@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Tuple, Union, cast
+from typing import Union, cast
 
 from src.orchestrator.policy_engine import PolicyEngine
 from src.orchestrator.whitelist_rules import EXIT1_OK_COMMANDS
@@ -84,7 +84,7 @@ class ShellWorker(BaseWorker):
             break
         return cmd in EXIT1_OK_COMMANDS
 
-    def _truncate_output(self, output: str) -> Tuple[str, bool]:
+    def _truncate_output(self, output: str) -> tuple[str, bool]:
         """截断过长输出，保留头尾部分
 
         Args:
@@ -144,12 +144,13 @@ class ShellWorker(BaseWorker):
             )
 
         if dry_run:
-            risk_info = f" [risk: {check_result.risk_level}]"
+            risk_level_value = check_result.risk_level or "medium"
+            risk_info = f" [risk: {risk_level_value}]"
             return WorkerResult(
                 success=True,
                 message=f"[DRY-RUN] Would execute: {command} (cwd: {working_dir}){risk_info}",
                 simulated=True,
-                data={"risk_level": check_result.risk_level, "reason": check_result.reason},
+                data={"risk_level": risk_level_value, "reason": check_result.reason},
             )
 
         # 执行命令（已通过白名单检查）
@@ -171,9 +172,7 @@ class ShellWorker(BaseWorker):
             # 判断是否成功：
             # - exit code 0 总是成功
             # - exit code 1 且命令属于 "exit1 正常" 类型（如 grep 无匹配）也视为成功
-            if exit_code == 0:
-                success = True
-            elif exit_code == 1 and self._is_exit1_ok(command) and not stderr:
+            if exit_code == 0 or exit_code == 1 and self._is_exit1_ok(command) and not stderr:
                 success = True
             else:
                 success = False

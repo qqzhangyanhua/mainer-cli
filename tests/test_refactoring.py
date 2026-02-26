@@ -8,15 +8,13 @@ from __future__ import annotations
 import pytest
 
 from src.context.environment import EnvironmentContext
-from src.llm.presets import ModelPreset, get_preset, list_presets
+from src.llm.presets import get_preset, list_presets
 from src.orchestrator.prompt import PromptBuilder
 from src.runbooks.loader import RunbookLoader
-from src.types import ActionParam, ToolAction
 from src.workers.base import BaseWorker
 from src.workers.chat import ChatWorker
 from src.workers.shell import ShellWorker
 from src.workers.system import SystemWorker
-
 
 # ================================================================
 # P0: 模型预设
@@ -185,7 +183,8 @@ class TestSlimPrompt:
         }
         builder = PromptBuilder()
         prompt = builder.build_system_prompt(
-            env_context, available_workers=workers  # type: ignore[arg-type]
+            env_context,
+            available_workers=workers,  # type: ignore[arg-type]
         )
         assert "shell.execute_command" in prompt
         assert "chat.respond" in prompt
@@ -265,9 +264,7 @@ class TestRunbookSystem:
         """传入 user_input 时，匹配到的 Runbook 应注入到 prompt"""
         env_context = EnvironmentContext()
         builder = PromptBuilder()
-        prompt = builder.build_system_prompt(
-            env_context, user_input="检查nginx状态"
-        )
+        prompt = builder.build_system_prompt(env_context, user_input="检查nginx状态")
         assert "Diagnostic reference" in prompt
         assert "service_health" in prompt
 
@@ -275,9 +272,7 @@ class TestRunbookSystem:
         """无关请求不应注入 Runbook"""
         env_context = EnvironmentContext()
         builder = PromptBuilder()
-        prompt = builder.build_system_prompt(
-            env_context, user_input="你好"
-        )
+        prompt = builder.build_system_prompt(env_context, user_input="你好")
         assert "Diagnostic reference" not in prompt
 
     def test_get_specific_runbook(self) -> None:

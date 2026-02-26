@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional, Union
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional, cast
 
 from openai import AsyncOpenAI
 
 from src.config.manager import LLMConfig
-from src.types import ConversationEntry, get_raw_output, is_output_truncated
+from src.llm.token_budget import TokenBudgetExceededError, TokenBudgetManager
+from src.types import ArgValue, ConversationEntry, get_raw_output, is_output_truncated
 
 if TYPE_CHECKING:
     from src.workers.base import BaseWorker
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -22,7 +27,7 @@ class ToolCallResult:
 
     worker: str
     action: str
-    args: dict[str, Union[str, int, bool, list[str], dict[str, str]]]
+    args: dict[str, ArgValue]
     thinking: str = ""
     is_final: bool = False
     raw_content: str = ""
@@ -44,6 +49,7 @@ class LLMClient:
             api_key=config.api_key or "dummy-key",
             timeout=float(config.timeout),
         )
+        self._budget_manager = TokenBudgetManager.from_config(config)
 
     @property
     def model(self) -> str:
@@ -120,6 +126,8 @@ class LLMClient:
             temperature=self._config.temperature,
         )
 
+        self._handle_usage(response.usage)
+
         content: str = response.choices[0].message.content or ""
         return content
 
@@ -154,15 +162,21 @@ class LLMClient:
             tools=tools,  # type: ignore
         )
 
+        self._handle_usage(response.usage)
+
         message = response.choices[0].message
         content = message.content or ""
 
         # 检查是否有 tool_calls
         if message.tool_calls:
             tool_call = message.tool_calls[0]
-            func_name = tool_call.function.name
+            tool_function = getattr(tool_call, "function", None)
+            if tool_function is None:
+                return None
+            func_name = str(getattr(tool_function, "name", ""))
             try:
-                func_args = json.loads(tool_call.function.arguments)
+                func_args_raw = getattr(tool_function, "arguments", "{}")
+                func_args = json.loads(func_args_raw)
             except json.JSONDecodeError:
                 func_args = {}
 
@@ -193,6 +207,23 @@ class LLMClient:
 
         return None
 
+    def _handle_usage(self, usage: Optional[object]) -> None:
+        if usage is None:
+            return
+
+        total_tokens = getattr(usage, "total_tokens", None)
+        if not isinstance(total_tokens, int):
+            return
+
+        status = self._budget_manager.track_usage(total_tokens)
+        if status is None:
+            return
+
+        if status.exceeded:
+            raise TokenBudgetExceededError(f"Token 预算已超限: {status.used}/{status.limit}")
+        if status.warning:
+            logger.warning("Token usage warning: %s/%s", status.used, status.limit)
+
     @staticmethod
     def _parsed_json_to_tool_call(parsed: dict[str, object]) -> Optional[ToolCallResult]:
         """将解析的 JSON 转换为 ToolCallResult（兼容旧格式）"""
@@ -200,16 +231,12 @@ class LLMClient:
         is_final = bool(parsed.get("is_final", False))
 
         action_dict = parsed.get("action")
-        if isinstance(action_dict, dict) and "worker" in action_dict:
-            inst = action_dict
-        else:
-            inst = parsed
+        inst = action_dict if isinstance(action_dict, dict) and "worker" in action_dict else parsed
 
         worker = str(inst.get("worker", ""))
         action = str(inst.get("action", ""))
-        args = inst.get("args", {})
-        if not isinstance(args, dict):
-            args = {}
+        args_value = inst.get("args", {})
+        args = cast(dict[str, ArgValue], args_value) if isinstance(args_value, dict) else {}
 
         if not worker or not action:
             return None
@@ -217,7 +244,7 @@ class LLMClient:
         return ToolCallResult(
             worker=worker,
             action=action,
-            args=args,  # type: ignore[arg-type]
+            args=args,
             thinking=thinking,
             is_final=is_final,
         )
@@ -238,10 +265,7 @@ class LLMClient:
         """
         # 尝试提取 Markdown JSON 代码块（支持多种格式）
         json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", response, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1).strip()
-        else:
-            json_str = response.strip()
+        json_str = json_match.group(1).strip() if json_match else response.strip()
 
         # 尝试直接解析
         try:

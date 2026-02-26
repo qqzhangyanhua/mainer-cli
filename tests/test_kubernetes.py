@@ -55,9 +55,14 @@ async def test_get_dry_run(worker: KubernetesWorker) -> None:
 
 @pytest.mark.asyncio
 async def test_describe_dry_run(worker: KubernetesWorker) -> None:
-    result = await worker.execute("describe", {
-        "resource": "pod", "name": "nginx-abc", "dry_run": True,
-    })
+    result = await worker.execute(
+        "describe",
+        {
+            "resource": "pod",
+            "name": "nginx-abc",
+            "dry_run": True,
+        },
+    )
     assert result.success is True
     assert "nginx-abc" in result.message
 
@@ -77,18 +82,28 @@ async def test_top_dry_run(worker: KubernetesWorker) -> None:
 
 @pytest.mark.asyncio
 async def test_rollout_dry_run(worker: KubernetesWorker) -> None:
-    result = await worker.execute("rollout", {
-        "subcmd": "restart", "deployment": "web", "dry_run": True,
-    })
+    result = await worker.execute(
+        "rollout",
+        {
+            "subcmd": "restart",
+            "deployment": "web",
+            "dry_run": True,
+        },
+    )
     assert result.success is True
     assert "web" in result.message
 
 
 @pytest.mark.asyncio
 async def test_scale_dry_run(worker: KubernetesWorker) -> None:
-    result = await worker.execute("scale", {
-        "deployment": "web", "replicas": 3, "dry_run": True,
-    })
+    result = await worker.execute(
+        "scale",
+        {
+            "deployment": "web",
+            "replicas": 3,
+            "dry_run": True,
+        },
+    )
     assert result.success is True
     assert "3" in result.message
 
@@ -121,9 +136,14 @@ async def test_top_invalid_resource(worker: KubernetesWorker) -> None:
 
 @pytest.mark.asyncio
 async def test_rollout_invalid_subcmd(worker: KubernetesWorker) -> None:
-    result = await worker.execute("rollout", {
-        "subcmd": "invalid", "deployment": "web", "dry_run": True,
-    })
+    result = await worker.execute(
+        "rollout",
+        {
+            "subcmd": "invalid",
+            "deployment": "web",
+            "dry_run": True,
+        },
+    )
     assert result.success is False
 
 

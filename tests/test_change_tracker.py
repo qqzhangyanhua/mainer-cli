@@ -46,9 +46,7 @@ def test_snapshot_new_file(tracker: ChangeTracker, tmp_path: Path) -> None:
     assert record.change_type == "file_write"
 
 
-def test_rollback_file_modify(
-    tracker: ChangeTracker, sample_file: Path
-) -> None:
+def test_rollback_file_modify(tracker: ChangeTracker, sample_file: Path) -> None:
     change_id = tracker.snapshot_file(str(sample_file))
 
     # 修改文件
@@ -61,9 +59,7 @@ def test_rollback_file_modify(
     assert sample_file.read_text() == "original content"
 
 
-def test_rollback_file_delete(
-    tracker: ChangeTracker, sample_file: Path
-) -> None:
+def test_rollback_file_delete(tracker: ChangeTracker, sample_file: Path) -> None:
     change_id = tracker.record_delete(str(sample_file))
 
     # 删除文件
@@ -83,9 +79,7 @@ def test_rollback_nonexistent_id(tracker: ChangeTracker) -> None:
     assert "不存在" in msg
 
 
-def test_rollback_already_rolled_back(
-    tracker: ChangeTracker, sample_file: Path
-) -> None:
+def test_rollback_already_rolled_back(tracker: ChangeTracker, sample_file: Path) -> None:
     change_id = tracker.snapshot_file(str(sample_file))
     sample_file.write_text("changed")
     tracker.rollback(change_id)

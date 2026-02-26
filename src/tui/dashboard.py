@@ -4,17 +4,12 @@ from __future__ import annotations
 
 from typing import Optional
 
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Vertical
 from textual.screen import Screen
 from textual.timer import Timer
-from textual.widgets import Footer, Header, ProgressBar, Static
-
-from src.types import MonitorMetric
+from textual.widgets import Footer, Header, Static
 
 
 class MetricBar(Static):
@@ -164,20 +159,14 @@ class DashboardScreen(Screen[None]):
                 yield Static("System Metrics", id="metrics-title")
                 cpu_warn, cpu_crit = self._thresholds.get("cpu", (80.0, 95.0))
                 mem_warn, mem_crit = self._thresholds.get("memory", (80.0, 95.0))
-                yield MetricBar(
-                    "CPU", warn_at=cpu_warn, crit_at=cpu_crit, bar_id="bar-cpu"
-                )
-                yield MetricBar(
-                    "Memory", warn_at=mem_warn, crit_at=mem_crit, bar_id="bar-memory"
-                )
+                yield MetricBar("CPU", warn_at=cpu_warn, crit_at=cpu_crit, bar_id="bar-cpu")
+                yield MetricBar("Memory", warn_at=mem_warn, crit_at=mem_crit, bar_id="bar-memory")
 
             # 磁盘面板
             with Vertical(id="disk-panel"):
                 yield Static("Disk Usage", id="disk-title")
                 disk_warn, disk_crit = self._thresholds.get("disk", (85.0, 95.0))
-                yield MetricBar(
-                    "Disk /", warn_at=disk_warn, crit_at=disk_crit, bar_id="bar-disk"
-                )
+                yield MetricBar("Disk /", warn_at=disk_warn, crit_at=disk_crit, bar_id="bar-disk")
 
             # 信息面板
             with Vertical(id="info-panel"):
@@ -248,21 +237,13 @@ class DashboardScreen(Screen[None]):
 
             mem_used = data.get("memory_used_mb")
             mem_total = data.get("memory_total_mb")
-            if isinstance(mem_used, (int, float)) and isinstance(
-                mem_total, (int, float)
-            ):
-                info_parts.append(
-                    f"  Memory: {int(mem_used)}MB / {int(mem_total)}MB"
-                )
+            if isinstance(mem_used, (int, float)) and isinstance(mem_total, (int, float)):
+                info_parts.append(f"  Memory: {int(mem_used)}MB / {int(mem_total)}MB")
 
             disk_used = data.get("disk_used_gb")
             disk_total = data.get("disk_total_gb")
-            if isinstance(disk_used, (int, float)) and isinstance(
-                disk_total, (int, float)
-            ):
-                info_parts.append(
-                    f"  Disk: {disk_used:.1f}GB / {disk_total:.1f}GB"
-                )
+            if isinstance(disk_used, (int, float)) and isinstance(disk_total, (int, float)):
+                info_parts.append(f"  Disk: {disk_used:.1f}GB / {disk_total:.1f}GB")
 
             info_parts.append(f"  Refresh: #{self._tick_count}")
 

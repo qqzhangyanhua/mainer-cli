@@ -7,17 +7,20 @@ reason_node 通过策略模式委托给 reason_strategies.py，
 from __future__ import annotations
 
 import re
-from typing import Callable, Optional
+import time
+from typing import Callable, Optional, cast
 
 from src.context.environment import EnvironmentContext
 from src.llm.client import LLMClient
+from src.observability import log_event
+from src.orchestrator.error_helper import ErrorHelper
 from src.orchestrator.graph.react_state import ReactState
 from src.orchestrator.preprocessor import RequestPreprocessor
 from src.orchestrator.prompt import PromptBuilder
 from src.orchestrator.reason_strategies import ReasonContext, select_strategy
 from src.orchestrator.safety import check_safety
 from src.orchestrator.validation import validate_instruction
-from src.types import ConversationEntry, Instruction, RiskLevel, WorkerResult
+from src.types import ArgValue, ConversationEntry, Instruction, RiskLevel, WorkerResult
 from src.workers.base import BaseWorker
 
 # 权限错误匹配模式（不区分大小写）
@@ -63,6 +66,7 @@ class ReactNodes:
 
         self._preprocessor = RequestPreprocessor()
         self._prompt_builder = PromptBuilder()
+        self._error_helper = ErrorHelper()
 
         # 构建策略共享上下文
         self._reason_ctx = ReasonContext(
@@ -74,6 +78,30 @@ class ReactNodes:
             dry_run=dry_run,
             max_risk=max_risk,
             progress_callback=progress_callback,
+        )
+
+    def _build_instruction(self, inst_dict_value: object) -> Instruction:
+        inst_dict = inst_dict_value if isinstance(inst_dict_value, dict) else {}
+        args_value = inst_dict.get("args", {})
+        args = cast(dict[str, ArgValue], args_value) if isinstance(args_value, dict) else {}
+        risk_level_raw = inst_dict.get("risk_level", "safe")
+        risk_level: RiskLevel = (
+            cast(RiskLevel, risk_level_raw)
+            if risk_level_raw in {"safe", "medium", "high"}
+            else "safe"
+        )
+        dry_run_value = inst_dict.get("dry_run", False)
+        dry_run = False
+        if isinstance(dry_run_value, bool):
+            dry_run = dry_run_value
+        elif isinstance(dry_run_value, str):
+            dry_run = dry_run_value.lower() == "true"
+        return Instruction(
+            worker=str(inst_dict.get("worker", "")),
+            action=str(inst_dict.get("action", "")),
+            args=args,
+            risk_level=risk_level,
+            dry_run=dry_run,
         )
 
     @staticmethod
@@ -227,14 +255,8 @@ class ReactNodes:
         """安全检查节点"""
         is_simple_intent = state.get("is_simple_intent", False)
 
-        inst_dict = state.get("current_instruction", {})
-        instruction = Instruction(
-            worker=str(inst_dict.get("worker", "")),
-            action=str(inst_dict.get("action", "")),
-            args=inst_dict.get("args", {}),  # type: ignore[arg-type]
-            risk_level=inst_dict.get("risk_level", "safe"),  # type: ignore[arg-type]
-            dry_run=bool(inst_dict.get("dry_run", False)),
-        )
+        inst_dict_value = state.get("current_instruction")
+        instruction = self._build_instruction(inst_dict_value)
 
         risk = check_safety(instruction)
 
@@ -266,13 +288,8 @@ class ReactNodes:
         if not is_simple_intent:
             self._report_progress("executing", "执行中...")
 
-        inst_dict = state.get("current_instruction", {})
-        instruction = Instruction(
-            worker=str(inst_dict.get("worker", "")),
-            action=str(inst_dict.get("action", "")),
-            args=inst_dict.get("args", {}),  # type: ignore[arg-type]
-            risk_level=inst_dict.get("risk_level", "safe"),  # type: ignore[arg-type]
-        )
+        inst_dict_value = state.get("current_instruction")
+        instruction = self._build_instruction(inst_dict_value)
 
         worker = self._workers.get(instruction.worker)
         if worker is None:
@@ -282,7 +299,23 @@ class ReactNodes:
         if self._dry_run or instruction.dry_run:
             args["dry_run"] = True
 
+        start_time = time.monotonic()
         result = await worker.execute(instruction.action, args)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+
+        log_event(
+            "worker_execute",
+            worker=instruction.worker,
+            action=instruction.action,
+            success=result.success,
+            duration_ms=duration_ms,
+            risk_level=instruction.risk_level,
+            dry_run=bool(args.get("dry_run", False)),
+        )
+
+        result = self._error_helper.enhance_error_message(
+            result, user_input=str(state.get("user_input", ""))
+        )
 
         status_emoji = "OK" if result.success else "FAIL"
         self._report_progress("result", f"{status_emoji} {result.message}")
@@ -312,7 +345,8 @@ class ReactNodes:
 
     async def check_node(self, state: ReactState) -> dict[str, object]:
         """检查节点：判断任务是否完成"""
-        result_dict = state.get("worker_result", {})
+        result_dict_value = state.get("worker_result")
+        result_dict = result_dict_value if isinstance(result_dict_value, dict) else {}
         worker_task_completed = bool(result_dict.get("task_completed", False))
         llm_is_final = state.get("llm_is_final")
         success = bool(result_dict.get("success", False))
@@ -392,8 +426,7 @@ class ReactNodes:
         user_input = state.get("user_input", "")
 
         findings = [
-            f"- {e.instruction.worker}.{e.instruction.action}: {e.result.message}"
-            for e in history
+            f"- {e.instruction.worker}.{e.instruction.action}: {e.result.message}" for e in history
         ]
         findings_text = "\n".join(findings) if findings else "（无历史记录）"
 
@@ -409,8 +442,7 @@ class ReactNodes:
 
         try:
             system_prompt = (
-                "你是一个运维诊断助手。"
-                "请基于已收集的信息给出简洁、有价值的中文诊断总结。"
+                "你是一个运维诊断助手。请基于已收集的信息给出简洁、有价值的中文诊断总结。"
             )
             summary = await self._llm.generate(system_prompt, summarize_prompt)
             summary = summary.strip()

@@ -49,13 +49,20 @@ class HttpWorker(BaseWorker):
                 name="fetch_url",
                 description="Fetch content from any HTTP/HTTPS URL. Returns up to 5000 chars.",
                 params=[
-                    ActionParam(name="url", param_type="string", description="Full URL (e.g. https://example.com/page)", required=True),
+                    ActionParam(
+                        name="url",
+                        param_type="string",
+                        description="Full URL (e.g. https://example.com/page)",
+                        required=True,
+                    ),
                 ],
                 risk_level="safe",
             ),
             ToolAction(
                 name="fetch_github_readme",
-                description="Fetch README from a GitHub repository (tries main/master, README.md/rst).",
+                description=(
+                    "Fetch README from a GitHub repository (tries main/master, README.md/rst)."
+                ),
                 params=[
                     ActionParam(
                         name="repo_url",
@@ -76,7 +83,12 @@ class HttpWorker(BaseWorker):
                         description="GitHub repo URL: https://github.com/owner/repo",
                         required=True,
                     ),
-                    ActionParam(name="path", param_type="string", description="Sub-path in repo (default: root)", required=False),
+                    ActionParam(
+                        name="path",
+                        param_type="string",
+                        description="Sub-path in repo (default: root)",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),

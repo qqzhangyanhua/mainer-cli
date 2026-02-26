@@ -52,7 +52,12 @@ class GitWorker(BaseWorker):
                 name="clone",
                 description="Clone a Git repository. Use target_dir for explicit destination.",
                 params=[
-                    ActionParam(name="url", param_type="string", description="Repository URL (https or git@)", required=True),
+                    ActionParam(
+                        name="url",
+                        param_type="string",
+                        description="Repository URL (https or git@)",
+                        required=True,
+                    ),
                     ActionParam(
                         name="target_dir",
                         param_type="string",
@@ -66,7 +71,12 @@ class GitWorker(BaseWorker):
                 name="pull",
                 description="Pull latest changes in an existing repository.",
                 params=[
-                    ActionParam(name="repo_dir", param_type="string", description="Path to repository directory", required=True),
+                    ActionParam(
+                        name="repo_dir",
+                        param_type="string",
+                        description="Path to repository directory",
+                        required=True,
+                    ),
                 ],
                 risk_level="medium",
             ),
@@ -74,7 +84,12 @@ class GitWorker(BaseWorker):
                 name="status",
                 description="Show git status (working tree state).",
                 params=[
-                    ActionParam(name="repo_dir", param_type="string", description="Path to repository directory", required=True),
+                    ActionParam(
+                        name="repo_dir",
+                        param_type="string",
+                        description="Path to repository directory",
+                        required=True,
+                    ),
                 ],
                 risk_level="safe",
             ),

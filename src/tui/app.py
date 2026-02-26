@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import cast
 
 try:
-    import pyperclip
+    import pyperclip  # type: ignore[import-untyped]
 
     HAS_CLIPBOARD = True
 except ImportError:
@@ -45,7 +45,12 @@ from src.tui.commands import (
     show_history_summary,
     show_log_analysis,
 )
-from src.tui.screens import ConfirmationScreen, SuggestedCommandScreen, UserChoiceScreen
+from src.tui.screens import (
+    ConfirmationScreen,
+    FirstRunScreen,
+    SuggestedCommandScreen,
+    UserChoiceScreen,
+)
 from src.tui.widgets import (
     HistoryWriter,
     SlashCommandSuggester,
@@ -53,11 +58,13 @@ from src.tui.widgets import (
     is_subsequence,
     subsequence_gap,
 )
-from src.types import ConversationEntry, Instruction, RiskLevel
+from src.types import ArgValue, ConversationEntry, Instruction, RiskLevel
 
 
 class OpsAIApp(App[str]):
     """OpsAI TUI 应用"""
+
+    dark: bool
 
     TITLE = f"OpsAI Terminal Assistant v{__version__}"
     SELECTION_ENABLED = True
@@ -282,10 +289,9 @@ class OpsAIApp(App[str]):
             id="copy-mode-banner",
             classes="hidden",
         )
-        with Container(id="loading-container"):
-            with Horizontal():
-                yield LoadingIndicator(id="loading-indicator")
-                yield Static("思考中...", id="loading-text")
+        with Container(id="loading-container"), Horizontal():
+            yield LoadingIndicator(id="loading-indicator")
+            yield Static("思考中...", id="loading-text")
         yield Container(
             Input(placeholder="Enter your request...", id="user-input"),
             id="input-container",
@@ -343,14 +349,21 @@ class OpsAIApp(App[str]):
         writer.write(banner)
 
     def _show_welcome_wizard(self) -> None:
-        writer = self._get_writer()
-        writer.write("[dim]正在检测环境...[/dim]")
         detector = EnvironmentDetector()
         env_info = detector.detect()
-        welcome_msg = detector.generate_welcome_message(env_info)
-        writer.clear()
-        writer.write(f"[bold green]{welcome_msg}[/bold green]")
-        self._mark_first_run_complete()
+        suggestions = detector.generate_suggestions(env_info)
+        scenarios = self._scenario_manager.recommend(env_info)
+
+        def _on_dismissed(command: str | None) -> None:
+            self._mark_first_run_complete()
+            if command:
+                asyncio.create_task(self._handle_user_input(command))
+
+        self.call_later(
+            lambda: self.push_screen(
+                FirstRunScreen(env_info, suggestions, scenarios), _on_dismissed
+            )
+        )
 
     # ── 输入事件 ──────────────────────────────────────────
 
@@ -453,9 +466,7 @@ class OpsAIApp(App[str]):
                 future.set_result(bool(result))
 
         self.call_later(
-            lambda: self.push_screen(
-                SuggestedCommandScreen(commands, message), _on_dismissed
-            )
+            lambda: self.push_screen(SuggestedCommandScreen(commands, message), _on_dismissed)
         )
         try:
             await future
@@ -499,7 +510,10 @@ class OpsAIApp(App[str]):
     # ── 请求执行 ──────────────────────────────────────────
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        user_input = event.value.strip()
+        await self._handle_user_input(event.value)
+
+    async def _handle_user_input(self, raw_input: str) -> None:
+        user_input = raw_input.strip()
         if not user_input:
             return
 
@@ -550,15 +564,22 @@ class OpsAIApp(App[str]):
                 instruction = Instruction(
                     worker=str(inst_dict.get("worker", "")),
                     action=str(inst_dict.get("action", "")),
-                    args=inst_dict.get("args", {}),  # type: ignore[arg-type]
-                    risk_level=inst_dict.get("risk_level", "medium"),  # type: ignore[arg-type]
+                    args=(
+                        cast(dict[str, ArgValue], inst_dict.get("args", {}))
+                        if isinstance(inst_dict.get("args"), dict)
+                        else {}
+                    ),
+                    risk_level=(
+                        cast(RiskLevel, inst_dict.get("risk_level"))
+                        if inst_dict.get("risk_level") in {"safe", "medium", "high"}
+                        else "medium"
+                    ),
                     dry_run=bool(inst_dict.get("dry_run", False)),
                 )
-
-                risk = state.get("risk_level", "medium")
-                if risk not in ("safe", "medium", "high"):
-                    risk = "medium"
-                risk_level = cast(RiskLevel, risk)
+                risk_value = state.get("risk_level", "medium")
+                risk_level: RiskLevel = (
+                    risk_value if risk_value in {"safe", "medium", "high"} else "medium"
+                )
                 approved = await self._request_confirmation(instruction, risk_level)
 
                 if approved:
@@ -742,10 +763,8 @@ class OpsAIApp(App[str]):
         interval = self._config.notifications.watch_interval
         for i, arg in enumerate(args):
             if arg == "--interval" and i + 1 < len(args):
-                try:
+                with contextlib.suppress(ValueError):
                     interval = int(args[i + 1])
-                except ValueError:
-                    pass
 
         # 初始化告警管理器
         from src.workers.notifier import AlertManager
@@ -756,12 +775,9 @@ class OpsAIApp(App[str]):
         )
 
         # 启动定时器
-        self._watch_timer = self.set_interval(
-            interval, self._watch_tick, name="watch_timer"
-        )
+        self._watch_timer = self.set_interval(interval, self._watch_tick, name="watch_timer")
         writer.write(
-            f"[green]Watch 模式已启动[/green] (间隔: {interval}s, "
-            f"输入 /monitor watch 停止)"
+            f"[green]Watch 模式已启动[/green] (间隔: {interval}s, 输入 /monitor watch 停止)"
         )
         # 立即执行一次
         self.call_later(self._watch_tick)
@@ -794,8 +810,11 @@ class OpsAIApp(App[str]):
                 elif status == "warning" and worst != "critical":
                     worst = "warning"
 
-        status_icon = {"ok": "[green]OK[/green]", "warning": "[yellow]WARN[/yellow]",
-                       "critical": "[red]CRIT[/red]"}.get(worst, "")
+        status_icon = {
+            "ok": "[green]OK[/green]",
+            "warning": "[yellow]WARN[/yellow]",
+            "critical": "[red]CRIT[/red]",
+        }.get(worst, "")
         self._status_message = f"Watch: {status_icon}"
         self._update_status_bar()
 
@@ -844,12 +863,15 @@ class OpsAIApp(App[str]):
                 # 发送到通知渠道
                 notifier = self._engine.get_worker("notifier")
                 if notifier is not None:
-                    await notifier.execute("send", {
-                        "message": event.message,
-                        "severity": event.severity,
-                        "title": f"OpsAI: {name}",
-                        "recovered": event.recovered,
-                    })
+                    await notifier.execute(
+                        "send",
+                        {
+                            "message": event.message,
+                            "severity": event.severity,
+                            "title": f"OpsAI: {name}",
+                            "recovered": event.recovered,
+                        },
+                    )
 
     def action_toggle_copy_mode(self) -> None:
         if self._copy_mode:
@@ -1125,7 +1147,7 @@ class OpsAIApp(App[str]):
                 Static(marker, classes="slash-tag"),
             )
             item = ListItem(row)
-            item._command = cmd
+            item._command = cmd  # type: ignore[attr-defined]
             items.append(item)
             command_names.append(cmd)
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.context.memory import MemoryEntry, SessionMemory
+from src.context.memory import SessionMemory
 
 
 @pytest.fixture
@@ -153,7 +153,7 @@ def test_context_prompt_max_entries(memory: SessionMemory) -> None:
         memory.remember(f"key{i}", f"value{i}")
 
     prompt = memory.get_context_prompt(max_entries=5)
-    lines = [l for l in prompt.split("\n") if l.startswith("- ")]
+    lines = [line for line in prompt.split("\n") if line.startswith("- ")]
     assert len(lines) == 5
 
 

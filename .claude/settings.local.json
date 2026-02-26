@@ -21,7 +21,17 @@
       "Bash(python3 -m pytest:*)",
       "Bash(git status:*)",
       "Bash(grep:*)",
-      "Bash(nginx -T:*)"
+      "Bash(nginx -T:*)",
+      "Bash(git -C /Users/zhangyanhua/AI/mainer-cli status)",
+      "Bash(git -C /Users/zhangyanhua/AI/mainer-cli diff)",
+      "Bash(git -C /Users/zhangyanhua/AI/mainer-cli log --oneline -10)",
+      "Bash(git -C /Users/zhangyanhua/AI/mainer-cli add:*)",
+      "Bash(git -C:*)",
+      "Bash(chmod:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(echo:*)",
+      "Bash(/tmp/final_verification_checklist.md:*)",
+      "Bash(ls:*)"
     ]
   }
 }

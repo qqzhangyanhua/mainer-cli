@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
-
 import pytest
 
 from src.config.manager import RemoteConfig
 from src.types import HostConfig
 from src.workers.remote import RemoteWorker
-
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -155,21 +152,27 @@ async def test_execute_missing_command(worker: RemoteWorker) -> None:
 
 @pytest.mark.asyncio
 async def test_execute_unknown_host(worker: RemoteWorker) -> None:
-    result = await worker.execute("execute", {
-        "host": "unknown-host",
-        "command": "ls",
-    })
+    result = await worker.execute(
+        "execute",
+        {
+            "host": "unknown-host",
+            "command": "ls",
+        },
+    )
     assert result.success is False
     assert "未找到主机" in result.message
 
 
 @pytest.mark.asyncio
 async def test_execute_dry_run(worker: RemoteWorker) -> None:
-    result = await worker.execute("execute", {
-        "host": "192.168.1.100",
-        "command": "df -h",
-        "dry_run": True,
-    })
+    result = await worker.execute(
+        "execute",
+        {
+            "host": "192.168.1.100",
+            "command": "df -h",
+            "dry_run": True,
+        },
+    )
     assert result.success is True
     assert result.simulated is True
     assert "DRY-RUN" in result.message

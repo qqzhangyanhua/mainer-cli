@@ -16,6 +16,7 @@ def worker() -> LogAnalyzerWorker:
 # 基本属性
 # ------------------------------------------------------------------
 
+
 def test_name(worker: LogAnalyzerWorker) -> None:
     assert worker.name == "log_analyzer"
 
@@ -78,7 +79,8 @@ async def test_analyze_lines_error_patterns(worker: LogAnalyzerWorker) -> None:
     assert isinstance(result.data, list)
 
     error_data = [
-        r for r in result.data
+        r
+        for r in result.data
         if isinstance(r, dict) and str(r.get("name", "")).startswith("error_")
     ]
     # 至少有错误模式
@@ -114,6 +116,7 @@ async def test_analyze_lines_empty(worker: LogAnalyzerWorker) -> None:
 # 日志解析细节
 # ------------------------------------------------------------------
 
+
 def test_parse_line_iso_timestamp(worker: LogAnalyzerWorker) -> None:
     entry = worker._parse_line("2024-01-15T09:30:45.123Z ERROR Something broke")
     assert entry.timestamp == "2024-01-15T09:30:45.123Z"
@@ -128,9 +131,7 @@ def test_parse_line_syslog_format(worker: LogAnalyzerWorker) -> None:
 
 
 def test_parse_line_nginx_error(worker: LogAnalyzerWorker) -> None:
-    entry = worker._parse_line(
-        '2024/01/15 09:30:45 [error] 1234#0: *5678 upstream timed out'
-    )
+    entry = worker._parse_line("2024/01/15 09:30:45 [error] 1234#0: *5678 upstream timed out")
     assert entry.level == "ERROR"
 
 
@@ -148,6 +149,7 @@ def test_parse_line_no_timestamp(worker: LogAnalyzerWorker) -> None:
 # ------------------------------------------------------------------
 # 消息归一化
 # ------------------------------------------------------------------
+
 
 def test_normalize_ips(worker: LogAnalyzerWorker) -> None:
     result = worker._normalize_message("Connection from 192.168.1.100 port 22")
@@ -175,6 +177,7 @@ def test_normalize_uuid(worker: LogAnalyzerWorker) -> None:
 # dry-run 和未知 action
 # ------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_dry_run(worker: LogAnalyzerWorker) -> None:
     result = await worker.execute("analyze_lines", {"lines": "test", "dry_run": True})
@@ -194,10 +197,12 @@ async def test_unknown_action(worker: LogAnalyzerWorker) -> None:
 # analyze_file
 # ------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_analyze_file(worker: LogAnalyzerWorker, tmp_path: object) -> None:
     """测试文件分析"""
     from pathlib import Path
+
     log_file = Path(str(tmp_path)) / "test.log"
     log_file.write_text(SAMPLE_LOGS, encoding="utf-8")
 
@@ -217,6 +222,7 @@ async def test_analyze_file_not_found(worker: LogAnalyzerWorker) -> None:
 # 大量重复日志去重
 # ------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_dedup_repeated_errors(worker: LogAnalyzerWorker) -> None:
     """100 行相同的错误应该聚合为 1 个模式"""
@@ -229,7 +235,8 @@ async def test_dedup_repeated_errors(worker: LogAnalyzerWorker) -> None:
     assert isinstance(result.data, list)
 
     error_rows = [
-        r for r in result.data
+        r
+        for r in result.data
         if isinstance(r, dict) and str(r.get("name", "")).startswith("error_")
     ]
     # 所有 100 条聚合为 1 个模式

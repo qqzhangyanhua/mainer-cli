@@ -2,36 +2,39 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, cast
 
 from pydantic import ValidationError
 
 from src.llm.client import LLMClient
 from src.orchestrator.validation import validate_instruction
-from src.types import ConversationEntry, Instruction, WorkerResult
+from src.types import ArgValue, ConversationEntry, Instruction, RiskLevel
 from src.workers.base import BaseWorker
 
 
 def build_instruction(parsed: dict[str, object]) -> Instruction:
     """从解析后的 JSON 构建指令，带基础容错"""
-    args = parsed.get("args", {})
-    if not isinstance(args, dict):
-        args = {}
+    args_value = parsed.get("args", {})
+    args = cast(dict[str, ArgValue], args_value) if isinstance(args_value, dict) else {}
 
-    risk_level = parsed.get("risk_level", "safe")
-    if risk_level not in {"safe", "medium", "high"}:
-        risk_level = "safe"
+    risk_level_raw = parsed.get("risk_level", "safe")
+    risk_level: RiskLevel = (
+        cast(RiskLevel, risk_level_raw) if risk_level_raw in {"safe", "medium", "high"} else "safe"
+    )
 
-    dry_run = parsed.get("dry_run", False)
-    if isinstance(dry_run, str):
-        dry_run = dry_run.lower() == "true"
+    dry_run_value = parsed.get("dry_run", False)
+    dry_run = False
+    if isinstance(dry_run_value, bool):
+        dry_run = dry_run_value
+    elif isinstance(dry_run_value, str):
+        dry_run = dry_run_value.lower() == "true"
 
     return Instruction(
         worker=str(parsed.get("worker", "")),
         action=str(parsed.get("action", "")),
-        args=args,  # type: ignore[arg-type]
-        risk_level=risk_level,  # type: ignore[arg-type]
-        dry_run=bool(dry_run),
+        args=args,
+        risk_level=risk_level,
+        dry_run=dry_run,
     )
 
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 import platform
 import subprocess
 from dataclasses import dataclass
-from typing import List
 
 
 @dataclass
@@ -21,7 +20,7 @@ class EnvironmentInfo:
     has_docker: bool
     docker_containers: int
     has_systemd: bool
-    systemd_services: List[str]
+    systemd_services: list[str]
     has_kubernetes: bool
     disk_usage: float  # 百分比
     memory_usage: float  # 百分比
@@ -40,7 +39,7 @@ class EnvironmentDetector:
     """
 
     # 常见的重要 systemd 服务
-    IMPORTANT_SERVICES: List[str] = [
+    IMPORTANT_SERVICES: list[str] = [
         "nginx",
         "apache2",
         "httpd",
@@ -132,7 +131,7 @@ class EnvironmentDetector:
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
             return False
 
-    def _list_important_services(self) -> List[str]:
+    def _list_important_services(self) -> list[str]:
         """列出正在运行的重要 systemd 服务
 
         Returns:
@@ -141,7 +140,7 @@ class EnvironmentDetector:
         if not self._check_systemd():
             return []
 
-        running: List[str] = []
+        running: list[str] = []
         for service in self.IMPORTANT_SERVICES:
             try:
                 result = subprocess.run(
@@ -195,7 +194,8 @@ class EnvironmentDetector:
                 )
                 lines = result.stdout.strip().split("\n")
                 if len(lines) >= 2:
-                    # macOS df 输出格式: Filesystem Size Used Avail Capacity iused ifree %iused Mounted
+                    # macOS df 输出格式:
+                    # Filesystem Size Used Avail Capacity iused ifree %iused Mounted
                     parts = lines[1].split()
                     for part in parts:
                         if part.endswith("%") and not part.startswith("i"):
@@ -240,7 +240,6 @@ class EnvironmentDetector:
                 )
                 lines = result.stdout.strip().split("\n")
 
-                page_size = 4096  # 默认页面大小
                 free_pages = 0
                 active_pages = 0
                 inactive_pages = 0
@@ -248,12 +247,7 @@ class EnvironmentDetector:
 
                 for line in lines:
                     if "page size of" in line:
-                        # 解析页面大小
-                        parts = line.split()
-                        for i, p in enumerate(parts):
-                            if p == "of" and i + 1 < len(parts):
-                                page_size = int(parts[i + 1])
-                                break
+                        continue
                     elif "Pages free:" in line:
                         free_pages = int(line.split(":")[1].strip().rstrip("."))
                     elif "Pages active:" in line:
@@ -280,16 +274,16 @@ class EnvironmentDetector:
                 if len(lines) >= 2:
                     parts = lines[1].split()
                     if len(parts) >= 3:
-                        total = float(parts[1])
-                        used = float(parts[2])
-                        if total > 0:
-                            return (used / total) * 100
+                        total_mb = float(parts[1])
+                        used_mb = float(parts[2])
+                        if total_mb > 0:
+                            return (used_mb / total_mb) * 100
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError, ValueError):
             pass
 
         return 0.0
 
-    def generate_suggestions(self, env_info: EnvironmentInfo) -> List[str]:
+    def generate_suggestions(self, env_info: EnvironmentInfo) -> list[str]:
         """根据环境生成操作建议
 
         Args:
@@ -298,7 +292,7 @@ class EnvironmentDetector:
         Returns:
             推荐操作列表（固定 3 个）
         """
-        suggestions: List[str] = []
+        suggestions: list[str] = []
 
         # 优先级 1: Docker 相关
         if env_info.has_docker and env_info.docker_containers > 0:
@@ -343,7 +337,7 @@ class EnvironmentDetector:
         Returns:
             格式化的欢迎消息
         """
-        parts: List[str] = [
+        parts: list[str] = [
             "欢迎使用 OpsAI！",
             "",
             "我已经检测到你的环境：",

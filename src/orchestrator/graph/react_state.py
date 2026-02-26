@@ -21,7 +21,7 @@ class ReactState(TypedDict, total=False):
     session_id: str  # 会话 ID，用于持久化
 
     # LangGraph 消息历史（自动合并）
-    messages: Annotated[list[dict[str, str]], add_messages]
+    messages: Annotated[list[dict[str, object]], add_messages]
 
     # 迭代控制
     iteration: int

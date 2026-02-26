@@ -1,7 +1,5 @@
 """错误提示助手测试"""
 
-import pytest
-
 from src.orchestrator.error_helper import ErrorHelper
 from src.types import WorkerResult
 
@@ -300,7 +298,10 @@ class TestGitError:
         helper = ErrorHelper()
         result = WorkerResult(
             success=False,
-            message="fatal: destination path 'repo' already exists and is not an empty directory. git clone failed",
+            message=(
+                "fatal: destination path 'repo' already exists and is not an empty directory. "
+                "git clone failed"
+            ),
         )
         suggestions = helper.suggest_fix(result)
         assert suggestions is not None

@@ -4,18 +4,14 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Optional
 
 import pytest
 
 from src.scheduler.scheduler import (
     CronExpr,
     CronField,
-    JobRunRecord,
     Scheduler,
-    ScheduledJob,
 )
-
 
 # ------------------------------------------------------------------
 # CronField
@@ -265,6 +261,7 @@ def test_record_run_updates_next(scheduler: Scheduler) -> None:
     assert j is not None
     # next_run 应该被更新
     assert j.next_run is not None
+    assert j.next_run >= (old_next or 0)
     assert j.next_run >= time.time()
 
 

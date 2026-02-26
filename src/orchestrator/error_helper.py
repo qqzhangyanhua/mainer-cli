@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import re
-from typing import List, Optional
+from typing import Optional
 
 from src.types import WorkerResult
 
@@ -31,7 +31,7 @@ class ErrorHelper:
             return None
 
         error_msg = result.message.lower()
-        suggestions: List[str] = []
+        suggestions: list[str] = []
 
         # 命令未找到（优先级最高，避免被其他 "not found" 规则捕获）
         if "command not found" in error_msg:
@@ -85,7 +85,7 @@ class ErrorHelper:
         ) or "no such container" in error_msg
 
     @staticmethod
-    def _suggest_container_not_found() -> List[str]:
+    def _suggest_container_not_found() -> list[str]:
         """容器未找到的建议"""
         return [
             "可能的原因：",
@@ -98,7 +98,7 @@ class ErrorHelper:
         ]
 
     @staticmethod
-    def _suggest_permission_denied() -> List[str]:
+    def _suggest_permission_denied() -> list[str]:
         """权限不足的建议"""
         return [
             "权限不足，尝试以下方法：",
@@ -130,15 +130,15 @@ class ErrorHelper:
         return "<端口号>"
 
     @staticmethod
-    def _suggest_port_in_use(port: str) -> List[str]:
+    def _suggest_port_in_use(port: str) -> list[str]:
         """端口占用的建议"""
         return [
             f"端口 {port} 已被占用，尝试以下方法：",
-            f"  1. 查看占用端口的进程：",
+            "  1. 查看占用端口的进程：",
             f"     > 查看 {port} 端口占用",
             f"     或使用: lsof -i :{port}",
-            f"  2. 停止占用进程后重试",
-            f"  3. 修改服务配置，使用其他端口",
+            "  2. 停止占用进程后重试",
+            "  3. 修改服务配置，使用其他端口",
         ]
 
     @staticmethod
@@ -152,7 +152,7 @@ class ErrorHelper:
         )
 
     @staticmethod
-    def _suggest_file_not_found() -> List[str]:
+    def _suggest_file_not_found() -> list[str]:
         """文件不存在的建议"""
         return [
             "文件/目录不存在，尝试以下方法：",
@@ -164,7 +164,7 @@ class ErrorHelper:
         ]
 
     @staticmethod
-    def _suggest_docker_not_running() -> List[str]:
+    def _suggest_docker_not_running() -> list[str]:
         """Docker 未运行的建议"""
         return [
             "Docker 未运行，尝试以下方法：",
@@ -188,15 +188,15 @@ class ErrorHelper:
         return "<命令>"
 
     @staticmethod
-    def _suggest_command_not_found(cmd: str) -> List[str]:
+    def _suggest_command_not_found(cmd: str) -> list[str]:
         """命令未找到的建议"""
         return [
             f"命令 '{cmd}' 未安装，尝试以下方法：",
-            f"  1. 安装命令（根据系统）：",
+            "  1. 安装命令（根据系统）：",
             f"     apt install {cmd}   # Debian/Ubuntu",
             f"     yum install {cmd}   # CentOS/RHEL",
             f"     brew install {cmd}  # macOS",
-            f"  2. 检查命令是否在 PATH 中：",
+            "  2. 检查命令是否在 PATH 中：",
             f"     which {cmd}",
         ]
 
@@ -213,7 +213,7 @@ class ErrorHelper:
         )
 
     @staticmethod
-    def _suggest_network_error() -> List[str]:
+    def _suggest_network_error() -> list[str]:
         """网络错误的建议"""
         return [
             "网络连接失败，尝试以下方法：",
@@ -235,7 +235,7 @@ class ErrorHelper:
         )
 
     @staticmethod
-    def _suggest_disk_full() -> List[str]:
+    def _suggest_disk_full() -> list[str]:
         """磁盘空间不足的建议"""
         return [
             "磁盘空间不足，尝试以下方法：",
@@ -260,7 +260,7 @@ class ErrorHelper:
         )
 
     @staticmethod
-    def _suggest_git_error(error_msg: str) -> List[str]:
+    def _suggest_git_error(error_msg: str) -> list[str]:
         """Git 错误的建议"""
         if "not a git repository" in error_msg:
             return [
@@ -298,7 +298,7 @@ class ErrorHelper:
         return []
 
     @staticmethod
-    def _suggest_generic() -> List[str]:
+    def _suggest_generic() -> list[str]:
         """通用建议"""
         return [
             "操作失败，建议：",

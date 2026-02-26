@@ -178,9 +178,7 @@ class TestPromptBuilder:
             "# 生产环境\n## 服务器 A (192.168.1.100)\n- Nginx: /opt/html\n",
             encoding="utf-8",
         )
-        monkeypatch.setattr(
-            "src.orchestrator.prompt.INVENTORY_PATH", inventory_file
-        )
+        monkeypatch.setattr("src.orchestrator.prompt.INVENTORY_PATH", inventory_file)
 
         builder = PromptBuilder()
         context = EnvironmentContext()
@@ -195,9 +193,7 @@ class TestPromptBuilder:
     ) -> None:
         """inventory.md 不存在时，system prompt 无 inventory 段"""
         missing_file = tmp_path / "inventory.md"
-        monkeypatch.setattr(
-            "src.orchestrator.prompt.INVENTORY_PATH", missing_file
-        )
+        monkeypatch.setattr("src.orchestrator.prompt.INVENTORY_PATH", missing_file)
 
         builder = PromptBuilder()
         context = EnvironmentContext()

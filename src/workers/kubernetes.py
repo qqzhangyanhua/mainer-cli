@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from typing import Union, cast
-
 from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
 from src.workers.shell import ShellWorker
@@ -42,9 +39,24 @@ class KubernetesWorker(BaseWorker):
                 name="get",
                 description="Get resource list (pods, deployments, services, etc.) via kubectl.",
                 params=[
-                    ActionParam(name="resource", param_type="string", description="Resource type: pods, deployments, services, etc.", required=False),
-                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
-                    ActionParam(name="label", param_type="string", description="Label selector (-l)", required=False),
+                    ActionParam(
+                        name="resource",
+                        param_type="string",
+                        description="Resource type: pods, deployments, services, etc.",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="namespace",
+                        param_type="string",
+                        description="Kubernetes namespace",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="label",
+                        param_type="string",
+                        description="Label selector (-l)",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -52,9 +64,21 @@ class KubernetesWorker(BaseWorker):
                 name="describe",
                 description="Describe a resource in detail.",
                 params=[
-                    ActionParam(name="resource", param_type="string", description="Resource type (e.g. pod, deployment)", required=False),
-                    ActionParam(name="name", param_type="string", description="Resource name", required=True),
-                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
+                    ActionParam(
+                        name="resource",
+                        param_type="string",
+                        description="Resource type (e.g. pod, deployment)",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="name", param_type="string", description="Resource name", required=True
+                    ),
+                    ActionParam(
+                        name="namespace",
+                        param_type="string",
+                        description="Kubernetes namespace",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -62,10 +86,27 @@ class KubernetesWorker(BaseWorker):
                 name="logs",
                 description="Get logs from a Pod.",
                 params=[
-                    ActionParam(name="pod", param_type="string", description="Pod name", required=True),
-                    ActionParam(name="container", param_type="string", description="Container name if multi-container pod", required=False),
-                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
-                    ActionParam(name="tail", param_type="integer", description="Number of trailing lines. Default 100.", required=False),
+                    ActionParam(
+                        name="pod", param_type="string", description="Pod name", required=True
+                    ),
+                    ActionParam(
+                        name="container",
+                        param_type="string",
+                        description="Container name if multi-container pod",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="namespace",
+                        param_type="string",
+                        description="Kubernetes namespace",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="tail",
+                        param_type="integer",
+                        description="Number of trailing lines. Default 100.",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -73,8 +114,18 @@ class KubernetesWorker(BaseWorker):
                 name="top",
                 description="Show resource usage (CPU, memory) for pods or nodes.",
                 params=[
-                    ActionParam(name="resource", param_type="string", description="pods or nodes. Default pods.", required=False),
-                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
+                    ActionParam(
+                        name="resource",
+                        param_type="string",
+                        description="pods or nodes. Default pods.",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="namespace",
+                        param_type="string",
+                        description="Kubernetes namespace",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -82,9 +133,24 @@ class KubernetesWorker(BaseWorker):
                 name="rollout",
                 description="Manage deployments: status, restart, undo, history.",
                 params=[
-                    ActionParam(name="subcmd", param_type="string", description="status | restart | undo | history", required=False),
-                    ActionParam(name="deployment", param_type="string", description="Deployment name", required=True),
-                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
+                    ActionParam(
+                        name="subcmd",
+                        param_type="string",
+                        description="status | restart | undo | history",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="deployment",
+                        param_type="string",
+                        description="Deployment name",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="namespace",
+                        param_type="string",
+                        description="Kubernetes namespace",
+                        required=False,
+                    ),
                 ],
                 risk_level="medium",
             ),
@@ -92,9 +158,24 @@ class KubernetesWorker(BaseWorker):
                 name="scale",
                 description="Scale deployment replica count.",
                 params=[
-                    ActionParam(name="deployment", param_type="string", description="Deployment name", required=True),
-                    ActionParam(name="replicas", param_type="integer", description="Desired replica count", required=True),
-                    ActionParam(name="namespace", param_type="string", description="Kubernetes namespace", required=False),
+                    ActionParam(
+                        name="deployment",
+                        param_type="string",
+                        description="Deployment name",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="replicas",
+                        param_type="integer",
+                        description="Desired replica count",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="namespace",
+                        param_type="string",
+                        description="Kubernetes namespace",
+                        required=False,
+                    ),
                 ],
                 risk_level="medium",
             ),
@@ -102,16 +183,18 @@ class KubernetesWorker(BaseWorker):
 
     async def _check_kubectl(self) -> bool:
         result = await self._shell.execute(
-            "execute_command", {"command": "kubectl version --client --short 2>/dev/null || kubectl version --client"}
+            "execute_command",
+            {"command": "kubectl version --client --short 2>/dev/null || kubectl version --client"},
         )
         return result.success
 
-    async def execute(
-        self, action: str, args: dict[str, ArgValue]
-    ) -> WorkerResult:
-        dry_run = args.get("dry_run", False)
-        if isinstance(dry_run, str):
-            dry_run = dry_run.lower() == "true"
+    async def execute(self, action: str, args: dict[str, ArgValue]) -> WorkerResult:
+        dry_run_value = args.get("dry_run", False)
+        dry_run = False
+        if isinstance(dry_run_value, bool):
+            dry_run = dry_run_value
+        elif isinstance(dry_run_value, str):
+            dry_run = dry_run_value.lower() == "true"
 
         handlers = {
             "get": self._get,
@@ -125,18 +208,15 @@ class KubernetesWorker(BaseWorker):
         if handler is None:
             return WorkerResult(success=False, message=f"Unknown action: {action}")
 
-        if not dry_run:
-            if not await self._check_kubectl():
-                return WorkerResult(
-                    success=False,
-                    message="kubectl 未找到或未配置。请安装 kubectl 并配置集群。",
-                )
+        if not dry_run and not await self._check_kubectl():
+            return WorkerResult(
+                success=False,
+                message="kubectl 未找到或未配置。请安装 kubectl 并配置集群。",
+            )
 
         return await handler(args, dry_run=dry_run)
 
-    def _build_cmd(
-        self, subcmd: str, namespace: str, extra: str = ""
-    ) -> str:
+    def _build_cmd(self, subcmd: str, namespace: str, extra: str = "") -> str:
         parts = ["kubectl"]
         if namespace:
             parts.append(f"-n {namespace}")
@@ -145,9 +225,7 @@ class KubernetesWorker(BaseWorker):
             parts.append(extra)
         return " ".join(parts)
 
-    async def _get(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _get(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """获取资源列表"""
         resource = str(args.get("resource", "pods"))
         namespace = str(args.get("namespace", ""))
@@ -170,7 +248,7 @@ class KubernetesWorker(BaseWorker):
         if not result.success:
             return WorkerResult(success=False, message=f"获取 {resource} 失败: {result.message}")
 
-        raw = result.data.get("raw_output", "") if result.data else ""
+        raw = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         return WorkerResult(
             success=True,
             data={"raw_output": str(raw)},
@@ -178,9 +256,7 @@ class KubernetesWorker(BaseWorker):
             task_completed=False,
         )
 
-    async def _describe(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _describe(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """查看资源详情"""
         resource = str(args.get("resource", "pod"))
         name = str(args.get("name", ""))
@@ -205,7 +281,7 @@ class KubernetesWorker(BaseWorker):
                 message=f"describe 失败: {result.message}",
             )
 
-        raw = result.data.get("raw_output", "") if result.data else ""
+        raw = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         return WorkerResult(
             success=True,
             data={"raw_output": str(raw)},
@@ -213,9 +289,7 @@ class KubernetesWorker(BaseWorker):
             task_completed=False,
         )
 
-    async def _logs(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _logs(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """获取 Pod 日志"""
         pod = str(args.get("pod", ""))
         container = str(args.get("container", ""))
@@ -244,7 +318,7 @@ class KubernetesWorker(BaseWorker):
         if not result.success:
             return WorkerResult(success=False, message=f"获取日志失败: {result.message}")
 
-        raw = result.data.get("raw_output", "") if result.data else ""
+        raw = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         return WorkerResult(
             success=True,
             data={"raw_output": str(raw)},
@@ -252,17 +326,13 @@ class KubernetesWorker(BaseWorker):
             task_completed=False,
         )
 
-    async def _top(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _top(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """资源使用排行"""
         resource = str(args.get("resource", "pods"))
         namespace = str(args.get("namespace", ""))
 
         if resource not in ("pods", "nodes"):
-            return WorkerResult(
-                success=False, message="top 仅支持 pods 或 nodes"
-            )
+            return WorkerResult(success=False, message="top 仅支持 pods 或 nodes")
 
         if dry_run:
             return WorkerResult(
@@ -275,11 +345,9 @@ class KubernetesWorker(BaseWorker):
         result = await self._shell.execute("execute_command", {"command": cmd})
 
         if not result.success:
-            return WorkerResult(
-                success=False, message=f"获取资源使用失败: {result.message}"
-            )
+            return WorkerResult(success=False, message=f"获取资源使用失败: {result.message}")
 
-        raw = result.data.get("raw_output", "") if result.data else ""
+        raw = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         return WorkerResult(
             success=True,
             data={"raw_output": str(raw)},
@@ -287,9 +355,7 @@ class KubernetesWorker(BaseWorker):
             task_completed=True,
         )
 
-    async def _rollout(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _rollout(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """部署管理"""
         subcmd = str(args.get("subcmd", "status"))
         deployment = str(args.get("deployment", ""))
@@ -311,9 +377,7 @@ class KubernetesWorker(BaseWorker):
                 simulated=True,
             )
 
-        cmd = self._build_cmd(
-            f"rollout {subcmd} deployment/{deployment}", namespace
-        )
+        cmd = self._build_cmd(f"rollout {subcmd} deployment/{deployment}", namespace)
         result = await self._shell.execute("execute_command", {"command": cmd})
 
         if not result.success:
@@ -322,7 +386,7 @@ class KubernetesWorker(BaseWorker):
                 message=f"rollout {subcmd} 失败: {result.message}",
             )
 
-        raw = result.data.get("raw_output", "") if result.data else ""
+        raw = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         return WorkerResult(
             success=True,
             data={"raw_output": str(raw)},
@@ -330,9 +394,7 @@ class KubernetesWorker(BaseWorker):
             task_completed=True,
         )
 
-    async def _scale(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _scale(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """副本数调整"""
         deployment = str(args.get("deployment", ""))
         replicas = args.get("replicas")
@@ -350,15 +412,11 @@ class KubernetesWorker(BaseWorker):
                 simulated=True,
             )
 
-        cmd = self._build_cmd(
-            f"scale deployment/{deployment} --replicas={replicas}", namespace
-        )
+        cmd = self._build_cmd(f"scale deployment/{deployment} --replicas={replicas}", namespace)
         result = await self._shell.execute("execute_command", {"command": cmd})
 
         if not result.success:
-            return WorkerResult(
-                success=False, message=f"scale 失败: {result.message}"
-            )
+            return WorkerResult(success=False, message=f"scale 失败: {result.message}")
 
         return WorkerResult(
             success=True,

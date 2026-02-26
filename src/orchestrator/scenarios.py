@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Optional
 
 from src.context.detector import EnvironmentInfo
 
@@ -28,13 +28,13 @@ class Scenario:
     description: str
     category: str  # troubleshooting, maintenance, deployment, monitoring
     icon: str
-    steps: List[ScenarioStep]
+    steps: list[ScenarioStep]
     risk_level: str = "safe"  # safe, medium, high
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
 
 # 预置场景库
-SCENARIOS: List[Scenario] = [
+SCENARIOS: list[Scenario] = [
     # 故障排查
     Scenario(
         id="service_down",
@@ -194,7 +194,7 @@ class ScenarioManager:
         """
         return self._scenarios.get(scenario_id)
 
-    def get_by_category(self, category: str) -> List[Scenario]:
+    def get_by_category(self, category: str) -> list[Scenario]:
         """根据分类获取场景
 
         Args:
@@ -205,7 +205,7 @@ class ScenarioManager:
         """
         return [s for s in SCENARIOS if s.category == category]
 
-    def get_all(self) -> List[Scenario]:
+    def get_all(self) -> list[Scenario]:
         """获取所有场景
 
         Returns:
@@ -213,7 +213,7 @@ class ScenarioManager:
         """
         return SCENARIOS.copy()
 
-    def search(self, query: str) -> List[Scenario]:
+    def search(self, query: str) -> list[Scenario]:
         """搜索场景
 
         Args:
@@ -223,7 +223,7 @@ class ScenarioManager:
             匹配的场景列表
         """
         query_lower = query.lower()
-        results: List[Scenario] = []
+        results: list[Scenario] = []
 
         for scenario in SCENARIOS:
             # 搜索标题、描述和标签
@@ -236,7 +236,7 @@ class ScenarioManager:
 
         return results
 
-    def recommend(self, env_info: EnvironmentInfo) -> List[Scenario]:
+    def recommend(self, env_info: EnvironmentInfo) -> list[Scenario]:
         """根据环境推荐场景
 
         Args:
@@ -245,7 +245,7 @@ class ScenarioManager:
         Returns:
             推荐的场景列表
         """
-        recommendations: List[Scenario] = []
+        recommendations: list[Scenario] = []
 
         # 磁盘告警 → 推荐清理场景
         if env_info.disk_usage > 80:
@@ -285,7 +285,7 @@ class ScenarioManager:
 
         # 去重（保持顺序）
         seen = set()
-        unique_recommendations: List[Scenario] = []
+        unique_recommendations: list[Scenario] = []
         for s in recommendations:
             if s.id not in seen:
                 seen.add(s.id)
@@ -293,7 +293,7 @@ class ScenarioManager:
 
         return unique_recommendations[:5]  # 最多返回 5 个
 
-    def format_scenario_list(self, scenarios: Optional[List[Scenario]] = None) -> str:
+    def format_scenario_list(self, scenarios: Optional[list[Scenario]] = None) -> str:
         """格式化场景列表为显示字符串
 
         Args:
@@ -305,7 +305,7 @@ class ScenarioManager:
         if scenarios is None:
             scenarios = self.get_all()
 
-        lines: List[str] = ["常见运维场景", ""]
+        lines: list[str] = ["常见运维场景", ""]
 
         # 按分类组织
         for cat_id, cat_name in self.CATEGORY_NAMES.items():

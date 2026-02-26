@@ -10,7 +10,6 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-
 ChangeType = Literal["file_write", "file_delete", "file_modify", "command"]
 
 

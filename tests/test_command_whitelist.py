@@ -1,13 +1,11 @@
 """Shell 命令白名单测试"""
 
-import pytest
-
 from src.orchestrator.command_whitelist import (
     check_command_safety,
+    check_dangerous_patterns,
+    check_pipe_safety,
     check_redirect_safety,
     parse_command,
-    check_pipe_safety,
-    check_dangerous_patterns,
     split_chain_commands,
 )
 

@@ -92,19 +92,51 @@ class LogAnalyzerWorker(BaseWorker):
                 name="analyze_lines",
                 description="Analyze raw log text for patterns, errors, and trends.",
                 params=[
-                    ActionParam(name="lines", param_type="string", description="Raw log content (newline-separated lines)", required=True),
-                    ActionParam(name="source", param_type="string", description="Source label for output (e.g. 'input', 'stdout')", required=False),
-                    ActionParam(name="top_n", param_type="integer", description="Number of top error/warn patterns to report. Default 10.", required=False),
+                    ActionParam(
+                        name="lines",
+                        param_type="string",
+                        description="Raw log content (newline-separated lines)",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="source",
+                        param_type="string",
+                        description="Source label for output (e.g. 'input', 'stdout')",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="top_n",
+                        param_type="integer",
+                        description="Number of top error/warn patterns to report. Default 10.",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
             ToolAction(
                 name="analyze_file",
-                description="Read log file from path and analyze (pattern extraction, error count).",
+                description=(
+                    "Read log file from path and analyze (pattern extraction, error count)."
+                ),
                 params=[
-                    ActionParam(name="path", param_type="string", description="Path to log file", required=True),
-                    ActionParam(name="tail", param_type="integer", description="Number of trailing lines to read. Default 1000.", required=False),
-                    ActionParam(name="top_n", param_type="integer", description="Number of top patterns. Default 10.", required=False),
+                    ActionParam(
+                        name="path",
+                        param_type="string",
+                        description="Path to log file",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="tail",
+                        param_type="integer",
+                        description="Number of trailing lines to read. Default 1000.",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="top_n",
+                        param_type="integer",
+                        description="Number of top patterns. Default 10.",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -112,9 +144,24 @@ class LogAnalyzerWorker(BaseWorker):
                 name="analyze_container",
                 description="Fetch Docker container logs and analyze for patterns and errors.",
                 params=[
-                    ActionParam(name="container", param_type="string", description="Container name or ID", required=True),
-                    ActionParam(name="tail", param_type="integer", description="Number of trailing log lines. Default 500.", required=False),
-                    ActionParam(name="top_n", param_type="integer", description="Number of top patterns. Default 10.", required=False),
+                    ActionParam(
+                        name="container",
+                        param_type="string",
+                        description="Container name or ID",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="tail",
+                        param_type="integer",
+                        description="Number of trailing log lines. Default 500.",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="top_n",
+                        param_type="integer",
+                        description="Number of top patterns. Default 10.",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -259,9 +306,7 @@ class LogAnalyzerWorker(BaseWorker):
     # ------------------------------------------------------------------
     # 核心分析逻辑
     # ------------------------------------------------------------------
-    def _do_analysis(
-        self, lines: list[str], source: str, top_n: int = 10
-    ) -> LogAnalysis:
+    def _do_analysis(self, lines: list[str], source: str, top_n: int = 10) -> LogAnalysis:
         entries = [self._parse_line(line.rstrip("\n")) for line in lines if line.strip()]
 
         # 级别计数
@@ -360,7 +405,7 @@ class LogAnalyzerWorker(BaseWorker):
         if timestamp:
             idx = msg.find(timestamp)
             if idx >= 0:
-                msg = msg[idx + len(timestamp):]
+                msg = msg[idx + len(timestamp) :]
 
         # 去掉级别标记和前导分隔符
         for pattern, _ in _LEVEL_PATTERNS:
@@ -451,9 +496,7 @@ class LogAnalyzerWorker(BaseWorker):
         # 趋势异常检测
         if analysis.trend:
             avg_errors = sum(p.errors for p in analysis.trend) / max(len(analysis.trend), 1)
-            spikes = [
-                p for p in analysis.trend if p.errors > avg_errors * 3 and p.errors >= 3
-            ]
+            spikes = [p for p in analysis.trend if p.errors > avg_errors * 3 and p.errors >= 3]
             if spikes:
                 spike_str = ", ".join(f"{s.window}({s.errors}次)" for s in spikes[:3])
                 lines.append(f"  异常峰值: {spike_str}")
@@ -463,19 +506,19 @@ class LogAnalyzerWorker(BaseWorker):
     # ------------------------------------------------------------------
     # 分析结果转 data 字段
     # ------------------------------------------------------------------
-    def _analysis_to_data(
-        self, analysis: LogAnalysis
-    ) -> list[dict[str, Union[str, int]]]:
+    def _analysis_to_data(self, analysis: LogAnalysis) -> list[dict[str, Union[str, int]]]:
         """将分析结果转为 WorkerResult.data 兼容格式"""
         rows: list[dict[str, Union[str, int]]] = []
 
         # 概览行
-        rows.append({
-            "name": "summary",
-            "total_lines": analysis.total_lines,
-            "dedup_count": analysis.dedup_count,
-            "source": analysis.source,
-        })
+        rows.append(
+            {
+                "name": "summary",
+                "total_lines": analysis.total_lines,
+                "dedup_count": analysis.dedup_count,
+                "source": analysis.source,
+            }
+        )
 
         # 级别计数
         for level, count in analysis.level_counts.items():
@@ -483,10 +526,12 @@ class LogAnalyzerWorker(BaseWorker):
 
         # Top 错误
         for i, err in enumerate(analysis.top_errors[:10]):
-            rows.append({
-                "name": f"error_{i}",
-                "pattern": err.pattern[:100],
-                "count": err.count,
-            })
+            rows.append(
+                {
+                    "name": f"error_{i}",
+                    "pattern": err.pattern[:100],
+                    "count": err.count,
+                }
+            )
 
         return rows

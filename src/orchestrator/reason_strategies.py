@@ -7,7 +7,7 @@ reason_node 变成一个简洁的路由器。
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable, Optional
+from typing import Callable, Optional, cast
 
 from src.context.environment import EnvironmentContext
 from src.llm.client import LLMClient
@@ -128,8 +128,7 @@ class ReasonStrategy(ABC):
         preprocessed: dict[str, object],
         history: list[ConversationEntry],
         thinking_history: list[str],
-    ) -> ReasonResult:
-        ...
+    ) -> ReasonResult: ...
 
 
 class IdentityStrategy(ReasonStrategy):
@@ -364,6 +363,7 @@ class LLMDefaultStrategy(ReasonStrategy):
 
 # ---- 路由函数 ----
 
+
 def select_strategy(
     preprocessed: dict[str, object],
     force_summarize: bool,
@@ -398,6 +398,7 @@ def select_strategy(
 
 
 # ---- 共享工具函数 ----
+
 
 async def _generate_with_retry(
     ctx: ReasonContext,
@@ -484,7 +485,9 @@ def _parse_and_validate(
         args = {}
 
     risk_level_raw = instruction_dict.get("risk_level", "safe")
-    risk_level = str(risk_level_raw) if risk_level_raw in {"safe", "medium", "high"} else "safe"
+    risk_level: RiskLevel = (
+        cast(RiskLevel, risk_level_raw) if risk_level_raw in {"safe", "medium", "high"} else "safe"
+    )
 
     from pydantic import ValidationError
 

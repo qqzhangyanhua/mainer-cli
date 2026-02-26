@@ -78,7 +78,10 @@ class TestShellWorker:
         # 命令被允许执行（但可能因文件不存在而执行失败）
         # 关键是不再出现 "not in whitelist" 阻止信息
         if result.success is False:
-            assert "blocked" not in result.message.lower() or "not in whitelist" not in result.message.lower()
+            assert (
+                "blocked" not in result.message.lower()
+                or "not in whitelist" not in result.message.lower()
+            )
 
     @pytest.mark.asyncio
     async def test_command_chaining_blocked(self) -> None:

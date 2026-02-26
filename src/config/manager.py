@@ -8,7 +8,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
-from src.types import AlertSeverity, HostConfig, NotificationChannel, RiskLevel
+from src.types import HostConfig, NotificationChannel, RiskLevel
 
 
 class LLMConfig(BaseModel):
@@ -24,6 +24,12 @@ class LLMConfig(BaseModel):
         default=False, description="模型是否支持 Function Calling"
     )
     context_window: int = Field(default=8192, description="模型上下文窗口大小")
+    daily_token_limit: int = Field(default=0, description="每日 token 限额（0 表示不限制）")
+    token_warning_threshold: float = Field(default=0.8, description="token 使用告警阈值（0-1）")
+    token_usage_path: str = Field(
+        default="~/.opsai/token_usage.json",
+        description="token 使用统计文件路径",
+    )
 
 
 class SafetyConfig(BaseModel):
@@ -76,9 +82,7 @@ class NotificationConfig(BaseModel):
     """通知配置"""
 
     enabled: bool = Field(default=False, description="是否启用通知")
-    channels: list[NotificationChannel] = Field(
-        default_factory=list, description="通知渠道列表"
-    )
+    channels: list[NotificationChannel] = Field(default_factory=list, description="通知渠道列表")
     watch_interval: int = Field(default=30, description="watch 模式采集间隔（秒）")
     alert_duration: int = Field(default=3, description="连续触发 N 次才告警（防抖）")
     alert_cooldown: int = Field(default=300, description="告警后冷却时间（秒）")
@@ -88,11 +92,33 @@ class RemoteConfig(BaseModel):
     """远程主机配置"""
 
     hosts: list[HostConfig] = Field(default_factory=list, description="远程主机列表")
-    default_key_path: Optional[str] = Field(
-        default=None, description="默认 SSH 私钥路径"
-    )
+    default_key_path: Optional[str] = Field(default=None, description="默认 SSH 私钥路径")
     connect_timeout: int = Field(default=10, description="SSH 连接超时（秒）")
     command_timeout: int = Field(default=30, description="远程命令执行超时（秒）")
+
+
+class PerformanceConfig(BaseModel):
+    """性能优化配置"""
+
+    enable_command_cache: bool = Field(default=True, description="启用命令缓存")
+    cache_confidence_threshold: float = Field(default=0.85, description="缓存命中置信度阈值（0-1）")
+
+
+class WorkersConfig(BaseModel):
+    """Worker 管理配置"""
+
+    enabled: list[str] = Field(
+        default_factory=list, description="启用的 Worker 列表（为空表示全部启用）"
+    )
+    disabled: list[str] = Field(default_factory=list, description="禁用的 Worker 列表")
+    plugin_paths: list[str] = Field(default_factory=list, description="自定义 Worker 插件路径")
+
+    def is_enabled(self, name: str) -> bool:
+        """判断 Worker 是否启用"""
+        normalized = name.strip().lower()
+        disabled = {item.lower() for item in self.disabled}
+        enabled = {item.lower() for item in self.enabled}
+        return normalized not in disabled and (not enabled or normalized in enabled)
 
 
 class OpsAIConfig(BaseModel):
@@ -106,6 +132,8 @@ class OpsAIConfig(BaseModel):
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     notifications: NotificationConfig = Field(default_factory=NotificationConfig)
     remote: RemoteConfig = Field(default_factory=RemoteConfig)
+    performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
+    workers: WorkersConfig = Field(default_factory=WorkersConfig)
 
 
 class ConfigManager:

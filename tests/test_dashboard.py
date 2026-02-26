@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
-from src.tui.dashboard import MetricBar, DashboardScreen
-
+from src.tui.dashboard import DashboardScreen, MetricBar
 
 # ------------------------------------------------------------------
 # MetricBar 测试
@@ -50,6 +47,7 @@ def test_metric_bar_color_thresholds() -> None:
 
 class FakeMonitor:
     """测试用假 MonitorWorker"""
+
     pass
 
 

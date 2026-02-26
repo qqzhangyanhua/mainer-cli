@@ -9,8 +9,8 @@ from typing import Optional
 from src.orchestrator.whitelist_rules import (
     ALLOWED_PIPE_COMMANDS,
     BLOCKED_COMMANDS,
-    DANGEROUS_PATTERNS,
     COMMAND_WHITELIST,
+    DANGEROUS_PATTERNS,
     CommandRule,
 )
 from src.types import RiskLevel
@@ -199,9 +199,8 @@ def check_dangerous_patterns(command: str) -> Optional[str]:
             if pattern == "|":
                 continue
             # & 需要智能处理：排除 && (命令链) 和 >& (重定向合并)
-            if pattern == "&":
-                if not _has_standalone_ampersand(command):
-                    continue
+            if pattern == "&" and not _has_standalone_ampersand(command):
+                continue
             return f"Dangerous pattern detected: '{pattern}'"
     return None
 
@@ -315,9 +314,7 @@ def check_pipe_safety(command: str) -> Optional[str]:
                 actual_cmd = actual_cmd_parts[0]
                 # 检查 xargs 执行的命令是否在禁止列表中
                 if actual_cmd in BLOCKED_COMMANDS:
-                    return (
-                        f"Command '{actual_cmd}' via xargs is blocked for security reasons"
-                    )
+                    return f"Command '{actual_cmd}' via xargs is blocked for security reasons"
 
     return None
 
@@ -412,7 +409,10 @@ def _check_chain_safety(sub_commands: list[str]) -> CommandCheckResult:
     results = [_check_single_command_safety(cmd) for cmd in sub_commands]
 
     risk_order: dict[Optional[RiskLevel], int] = {
-        "safe": 0, "medium": 1, "high": 2, None: 1,
+        "safe": 0,
+        "medium": 1,
+        "high": 2,
+        None: 1,
     }
 
     # 任一子命令被显式拦截 → 整条链拦截
@@ -456,9 +456,7 @@ def _check_single_command_safety(command: str) -> CommandCheckResult:
     if not command.strip().startswith("echo "):
         redirect_reason = check_redirect_safety(command)
         if redirect_reason:
-            return CommandCheckResult(
-                allowed=False, risk_level="high", reason=redirect_reason
-            )
+            return CommandCheckResult(allowed=False, risk_level="high", reason=redirect_reason)
 
     # 2. 解析命令
     base_command, subcommand, args = parse_command(command)

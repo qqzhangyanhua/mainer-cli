@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Literal, Optional, Union
+from typing import Callable, Literal, Optional, Protocol, Union, cast
 
 from langgraph.graph import END, START, StateGraph
 
@@ -14,6 +14,30 @@ from src.orchestrator.graph.react_nodes import ReactNodes
 from src.orchestrator.graph.react_state import ReactState
 from src.types import RiskLevel
 from src.workers.base import BaseWorker
+
+
+class StateSnapshot(Protocol):
+    values: ReactState
+
+
+class GraphDiagram(Protocol):
+    def draw_mermaid(self) -> str: ...
+
+
+class GraphProtocol(Protocol):
+    async def ainvoke(
+        self,
+        state: Optional[ReactState],
+        config: dict[str, object],
+    ) -> ReactState: ...
+
+    def update_state(self, config: dict[str, object], values: dict[str, object]) -> None: ...
+
+    def get_state(self, config: dict[str, object]) -> StateSnapshot: ...
+
+    def get_state_history(self, config: dict[str, object]) -> list[StateSnapshot]: ...
+
+    def get_graph(self) -> GraphDiagram: ...
 
 
 def route_after_safety(
@@ -104,7 +128,7 @@ class ReactGraph:
         )
 
         # 构建状态图
-        self._graph = self._build_graph(
+        self._graph: GraphProtocol = self._build_graph(
             enable_checkpoints=enable_checkpoints,
             enable_interrupts=enable_interrupts,
             use_sqlite=use_sqlite,
@@ -117,9 +141,9 @@ class ReactGraph:
         enable_interrupts: bool,
         use_sqlite: bool,
         checkpoint_db_path: Union[str, Path, None],
-    ) -> StateGraph:
+    ) -> GraphProtocol:
         """构建状态图"""
-        builder: StateGraph[ReactState] = StateGraph(ReactState)
+        builder = StateGraph(ReactState)
 
         # 添加节点
         builder.add_node("preprocess", self._nodes.preprocess_node)
@@ -181,14 +205,17 @@ class ReactGraph:
             )
             if enable_interrupts:
                 # 在 approve 节点前中断，等待用户确认
-                return builder.compile(
-                    checkpointer=checkpointer,
-                    interrupt_before=["approve"],
+                return cast(
+                    GraphProtocol,
+                    builder.compile(
+                        checkpointer=checkpointer,
+                        interrupt_before=["approve"],
+                    ),
                 )
             else:
-                return builder.compile(checkpointer=checkpointer)
+                return cast(GraphProtocol, builder.compile(checkpointer=checkpointer))
         else:
-            return builder.compile()
+            return cast(GraphProtocol, builder.compile())
 
     async def run(
         self,
@@ -220,7 +247,7 @@ class ReactGraph:
             "error_recovery_count": 0,
         }
 
-        config = {"configurable": {"thread_id": session_id or "default"}}
+        config: dict[str, object] = {"configurable": {"thread_id": session_id or "default"}}
 
         # 执行状态图
         final_state = await self._graph.ainvoke(initial_state, config)
@@ -241,7 +268,7 @@ class ReactGraph:
         Returns:
             最终状态
         """
-        config = {"configurable": {"thread_id": session_id}}
+        config: dict[str, object] = {"configurable": {"thread_id": session_id}}
 
         # 更新状态：设置审批结果
         self._graph.update_state(
@@ -263,10 +290,10 @@ class ReactGraph:
         Returns:
             当前状态，不存在返回 None
         """
-        config = {"configurable": {"thread_id": session_id}}
+        config: dict[str, object] = {"configurable": {"thread_id": session_id}}
         try:
             state_snapshot = self._graph.get_state(config)
-            return state_snapshot.values  # type: ignore[return-value]
+            return state_snapshot.values
         except Exception:
             return None
 
@@ -279,10 +306,10 @@ class ReactGraph:
         Returns:
             状态历史列表
         """
-        config = {"configurable": {"thread_id": session_id}}
+        config: dict[str, object] = {"configurable": {"thread_id": session_id}}
         history = []
         for state_snapshot in self._graph.get_state_history(config):
-            history.append(state_snapshot.values)  # type: ignore[arg-type]
+            history.append(state_snapshot.values)
         return history
 
     def get_mermaid_diagram(self) -> str:

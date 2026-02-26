@@ -26,10 +26,12 @@ config_app = typer.Typer(help="配置管理命令")
 template_app = typer.Typer(help="任务模板管理命令")
 cache_app = typer.Typer(help="缓存管理命令")
 host_app = typer.Typer(help="远程主机管理命令")
+workers_app = typer.Typer(help="Worker 管理命令")
 app.add_typer(config_app, name="config")
 app.add_typer(template_app, name="template")
 app.add_typer(cache_app, name="cache")
 app.add_typer(host_app, name="host")
+app.add_typer(workers_app, name="workers")
 
 console = Console()
 
@@ -80,7 +82,7 @@ def query(
         console.print(Panel(result, title="Result", border_style="green"))
     except Exception as e:
         console.print(Panel(f"Error: {e!s}", title="Error", border_style="red"))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @app.command()
@@ -112,6 +114,41 @@ def deploy(
     else:
         console.print(Panel(result.message, title="❌ 部署失败", border_style="red"))
         raise typer.Exit(code=1)
+
+
+@app.command()
+def usage(
+    days: int = typer.Option(7, "--days", "-d", help="显示最近 N 天统计"),
+    reset: bool = typer.Option(False, "--reset", help="重置今日统计"),
+) -> None:
+    """查看 token 使用统计"""
+    from rich.table import Table
+
+    from src.llm.token_budget import TokenBudgetManager
+
+    config_manager = ConfigManager()
+    config = config_manager.load()
+    manager = TokenBudgetManager.from_config(config.llm)
+
+    if reset:
+        manager.reset()
+
+    limit = config.llm.daily_token_limit
+    today_used = manager.get_today_usage()
+
+    if limit <= 0:
+        console.print("[green]Token 使用无上限[/green]")
+    else:
+        percent = min(100.0, (today_used / max(1, limit)) * 100)
+        console.print(f"[green]今日使用: {today_used}/{limit} ({percent:.1f}%)")
+
+    table = Table(title="Token Usage (Recent Days)")
+    table.add_column("Date", style="cyan")
+    table.add_column("Tokens", style="magenta", justify="right")
+    for entry in manager.get_recent_usage(days=days):
+        table.add_row(entry.day, str(entry.tokens))
+
+    console.print(table)
 
 
 async def _deploy_project(repo_url: str, target_dir: str, dry_run: bool) -> WorkerResult:
@@ -360,7 +397,7 @@ def template_run(
             context_dict = json.loads(context)
         except json.JSONDecodeError as e:
             console.print(f"[red]Invalid JSON context: {e!s}[/red]")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     # 生成指令
     instructions = template_manager.generate_instructions(template, context_dict)
@@ -417,7 +454,7 @@ def template_run(
         console.print("\n[green]✓ Template execution completed successfully[/green]")
     except Exception as e:
         console.print(Panel(f"Error: {e!s}", title="Error", border_style="red"))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 @cache_app.command("list")
@@ -543,8 +580,6 @@ def host_list() -> None:
     """列出所有已配置的远程主机"""
     from rich.table import Table
 
-    from src.types import HostConfig
-
     config_manager = ConfigManager()
     config = config_manager.load()
 
@@ -600,7 +635,7 @@ def host_add(
             console.print(f"[yellow]Host already exists: {address}[/yellow]")
             raise typer.Exit(1)
 
-    label_list = [l.strip() for l in labels.split(",") if l.strip()] if labels else []
+    label_list = [label.strip() for label in labels.split(",") if label.strip()] if labels else []
 
     host = HostConfig(
         address=address,
@@ -655,9 +690,9 @@ def host_test(
 
     try:
         from src.workers.remote import RemoteWorker
-    except ImportError:
+    except ImportError as e:
         console.print("[red]asyncssh not installed. Run: uv pip install asyncssh[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     worker = RemoteWorker(config=config.remote)
     result = asyncio.run(worker.execute("test_connection", {"host": address}))
@@ -667,6 +702,38 @@ def host_test(
     else:
         console.print(f"[red]✗[/red] {result.message}")
         raise typer.Exit(1)
+
+
+@workers_app.command("list")
+def workers_list(
+    detail: bool = typer.Option(False, "--detail", "-d", help="显示能力详情"),
+) -> None:
+    """查看已注册的 Worker"""
+    from rich.table import Table
+
+    config_manager = ConfigManager()
+    config = config_manager.load()
+
+    engine = OrchestratorEngine(config)
+    workers = engine.list_workers()
+
+    table = Table(title="Registered Workers")
+    table.add_column("Name", style="cyan")
+    table.add_column("Capabilities", style="magenta")
+
+    for name in sorted(workers.keys()):
+        worker = workers[name]
+        capabilities = worker.get_capabilities()
+        cap_text = ", ".join(capabilities) if detail else str(len(capabilities))
+        table.add_row(name, cap_text)
+
+    console.print(table)
+
+    errors = engine.get_worker_load_errors()
+    if errors:
+        console.print("[yellow]Worker 加载异常:[/yellow]")
+        for err in errors:
+            console.print(f"  - {err}")
 
 
 if __name__ == "__main__":

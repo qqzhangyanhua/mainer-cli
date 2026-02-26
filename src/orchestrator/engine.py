@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable
+import time
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Optional
 
 from src.config.manager import OpsAIConfig
 from src.context.environment import EnvironmentContext
 from src.llm.client import LLMClient
-
-from src.orchestrator.graph_adapter import build_graph_messages, parse_graph_messages
+from src.observability import configure_structured_logging, log_event
+from src.orchestrator.command_cache import CommandCache
+from src.orchestrator.error_helper import ErrorHelper
 from src.orchestrator.graph.react_state import ReactState
+from src.orchestrator.graph_adapter import build_graph_messages, parse_graph_messages
 from src.types import ConversationEntry, Instruction, RiskLevel, WorkerResult
 from src.workers.audit import AuditWorker
 from src.workers.base import BaseWorker
+from src.workers.registry import WorkerRegistry
 from src.workers.system import SystemWorker
 
 
@@ -46,89 +50,88 @@ class OrchestratorEngine:
             use_sqlite_checkpoint: 是否使用 SQLite 持久化检查点
         """
         self._config = config
+        configure_structured_logging()
         self._llm_client = LLMClient(config.llm)
         self._context = EnvironmentContext()
         self._confirmation_callback = confirmation_callback
         self._dry_run = dry_run or config.safety.dry_run_by_default
         self._progress_callback = progress_callback
+        self._error_helper = ErrorHelper()
+        self._command_cache = CommandCache()
+        self._command_cache_enabled = self._config.performance.enable_command_cache
+        self._command_cache_threshold = self._config.performance.cache_confidence_threshold
 
         audit_log_path = Path(self._config.audit.log_path).expanduser()
+        self._worker_registry = WorkerRegistry(self._config.workers)
 
-        # 初始化 Workers
-        self._workers: dict[str, BaseWorker] = {
-            "system": SystemWorker(),
-            "audit": AuditWorker(
+        self._worker_registry.register_factory("system", SystemWorker)
+        self._worker_registry.register_factory(
+            "audit",
+            lambda: AuditWorker(
                 log_path=audit_log_path,
                 max_log_size_mb=self._config.audit.max_log_size_mb,
                 retain_days=self._config.audit.retain_days,
             ),
-        }
+        )
 
-        # 注册 ChatWorker
         try:
             from src.workers.chat import ChatWorker
 
-            self._workers["chat"] = ChatWorker()
+            self._worker_registry.register_factory("chat", ChatWorker)
         except ImportError:
             pass
 
-        # 注册 ShellWorker
         try:
             from src.workers.shell import ShellWorker
 
-            self._workers["shell"] = ShellWorker()
+            self._worker_registry.register_factory("shell", ShellWorker)
         except ImportError:
             pass
 
-        # 尝试导入并注册 ContainerWorker
         try:
             from src.workers.container import ContainerWorker
 
-            self._workers["container"] = ContainerWorker()
+            self._worker_registry.register_factory("container", ContainerWorker)
         except ImportError:
             pass
 
-        # 注册 ComposeWorker
         try:
             from src.workers.compose import ComposeWorker
 
-            self._workers["compose"] = ComposeWorker()
+            self._worker_registry.register_factory("compose", ComposeWorker)
         except ImportError:
             pass
 
-        # 注册 AnalyzeWorker（需要 LLM 客户端）
         try:
             from src.workers.analyze import AnalyzeWorker
 
-            self._workers["analyze"] = AnalyzeWorker(self._llm_client)
+            self._worker_registry.register_factory(
+                "analyze", lambda: AnalyzeWorker(self._llm_client)
+            )
         except ImportError:
             pass
 
-        # 注册 HttpWorker
         try:
             from src.workers.http import HttpWorker
 
-            self._workers["http"] = HttpWorker(self._config.http)
+            self._worker_registry.register_factory("http", lambda: HttpWorker(self._config.http))
         except ImportError:
             pass
 
-        # 注册 GitWorker
         try:
             from src.workers.git import GitWorker
 
-            self._workers["git"] = GitWorker()
+            self._worker_registry.register_factory("git", GitWorker)
         except ImportError:
             pass
 
-        # 注册 LogAnalyzerWorker
         try:
             from src.workers.log_analyzer import LogAnalyzerWorker
 
-            self._workers["log_analyzer"] = LogAnalyzerWorker()
+            self._worker_registry.register_factory("log_analyzer", LogAnalyzerWorker)
         except ImportError:
             pass
 
-        # 注册 MonitorWorker
         try:
             from src.workers.monitor import MonitorWorker
 
@@ -138,44 +141,47 @@ class OrchestratorEngine:
                 "memory": (mon_cfg.memory_warning, mon_cfg.memory_critical),
                 "disk": (mon_cfg.disk_warning, mon_cfg.disk_critical),
             }
-            self._workers["monitor"] = MonitorWorker(thresholds=thresholds)
+            self._worker_registry.register_factory(
+                "monitor", lambda: MonitorWorker(thresholds=thresholds)
+            )
         except ImportError:
             pass
 
-        # 注册 KubernetesWorker
         try:
             from src.workers.kubernetes import KubernetesWorker
 
-            self._workers["kubernetes"] = KubernetesWorker()
+            self._worker_registry.register_factory("kubernetes", KubernetesWorker)
         except ImportError:
             pass
 
-        # 注册 NotifierWorker
-        if self._config.notifications.enabled and self._config.notifications.channels:
+        if (
+            self._config.notifications.enabled
+            and self._config.notifications.channels
+            and self._config.workers.is_enabled("notifier")
+        ):
             try:
                 from src.workers.notifier import NotifierWorker
 
-                self._workers["notifier"] = NotifierWorker(
-                    channels=self._config.notifications.channels,
+                self._worker_registry.register_factory(
+                    "notifier",
+                    lambda: NotifierWorker(channels=self._config.notifications.channels),
                 )
             except ImportError:
                 pass
 
-        # 注册 RemoteWorker
-        if self._config.remote.hosts:
+        if self._config.remote.hosts and self._config.workers.is_enabled("remote"):
             try:
                 from src.workers.remote import RemoteWorker
 
-                self._workers["remote"] = RemoteWorker(
-                    config=self._config.remote,
+                self._worker_registry.register_factory(
+                    "remote", lambda: RemoteWorker(config=self._config.remote)
                 )
             except ImportError:
                 pass
 
-        # 注册 DeployWorker（需要 HttpWorker、ShellWorker 和 LLMClient）
-        http_worker = self._workers.get("http")
-        shell_worker = self._workers.get("shell")
-        if http_worker and shell_worker:
+        http_worker = self._worker_registry.workers.get("http")
+        shell_worker = self._worker_registry.workers.get("shell")
+        if self._config.workers.is_enabled("deploy") and http_worker and shell_worker:
             try:
                 from src.workers.deploy import DeployWorker
                 from src.workers.http import HttpWorker as HttpWorkerType
@@ -184,7 +190,6 @@ class OrchestratorEngine:
                 if isinstance(http_worker, HttpWorkerType) and isinstance(
                     shell_worker, ShellWorkerType
                 ):
-                    # 创建适配器：将 DeployWorker 的确认回调适配到 Engine 的确认回调
                     deploy_confirmation_callback = None
                     deploy_ask_user_callback = None
 
@@ -193,16 +198,21 @@ class OrchestratorEngine:
                             confirmation_callback
                         )
 
-                    self._workers["deploy"] = DeployWorker(
-                        http_worker,
-                        shell_worker,
-                        self._llm_client,
-                        progress_callback,
-                        deploy_confirmation_callback,
-                        deploy_ask_user_callback,
+                    self._worker_registry.register(
+                        DeployWorker(
+                            http_worker,
+                            shell_worker,
+                            self._llm_client,
+                            progress_callback,
+                            deploy_confirmation_callback,
+                            deploy_ask_user_callback,
+                        )
                     )
             except ImportError:
                 pass
+
+        self._worker_registry.load_plugins()
+        self._workers = self._worker_registry.workers
 
         # 始终初始化 ReactGraph
         from src.orchestrator.graph import ReactGraph
@@ -234,6 +244,14 @@ class OrchestratorEngine:
         """
         return self._workers.get(name)
 
+    def list_workers(self) -> dict[str, BaseWorker]:
+        """列出已注册的 Worker"""
+        return dict(self._workers)
+
+    def get_worker_load_errors(self) -> list[str]:
+        """获取 Worker 加载错误"""
+        return self._worker_registry.get_errors()
+
     def _create_deploy_confirmation_adapter(
         self,
         confirmation_callback: Callable[[Instruction, RiskLevel], bool | Awaitable[bool]],
@@ -257,7 +275,11 @@ class OrchestratorEngine:
 
         return adapter
 
-    async def execute_instruction(self, instruction: Instruction) -> WorkerResult:
+    async def execute_instruction(
+        self,
+        instruction: Instruction,
+        user_input: str = "",
+    ) -> WorkerResult:
         """执行指令
 
         Args:
@@ -278,7 +300,21 @@ class OrchestratorEngine:
         if self._dry_run or instruction.dry_run:
             args["dry_run"] = True
 
-        return await worker.execute(instruction.action, args)
+        start_time = time.monotonic()
+        result = await worker.execute(instruction.action, args)
+        duration_ms = int((time.monotonic() - start_time) * 1000)
+
+        log_event(
+            "worker_execute",
+            worker=instruction.worker,
+            action=instruction.action,
+            success=result.success,
+            duration_ms=duration_ms,
+            risk_level=instruction.risk_level,
+            dry_run=bool(args.get("dry_run", False)),
+        )
+
+        return self._error_helper.enhance_error_message(result, user_input=user_input)
 
     def _build_graph_messages(
         self, history: Optional[list[ConversationEntry]]
@@ -286,7 +322,10 @@ class OrchestratorEngine:
         """将 ConversationEntry 转换为 LangGraph 消息格式（委托到 graph_adapter）"""
         return build_graph_messages(history)
 
-    def _parse_graph_messages(self, messages: list[dict[str, str]]) -> list[ConversationEntry]:
+    def _parse_graph_messages(
+        self,
+        messages: Sequence[dict[str, object]],
+    ) -> list[ConversationEntry]:
         """从 LangGraph 消息历史解析 ConversationEntry（委托到 graph_adapter）"""
         return parse_graph_messages(messages)
 
@@ -309,6 +348,56 @@ class OrchestratorEngine:
             最终结果消息
         """
         try:
+            if self._command_cache_enabled:
+                match = self._command_cache.match(user_input)
+                if match and match.confidence >= self._command_cache_threshold:
+                    # 缓存命中后仍需进行安全检查
+                    from src.orchestrator.policy_engine import PolicyEngine
+
+                    policy_result = PolicyEngine.check_instruction(match.instruction)
+                    instruction = match.instruction
+                    instruction.risk_level = policy_result.risk_level
+
+                    # 检查是否需要用户审批
+                    needs_approval = False
+                    if not policy_result.allowed:
+                        return f"Command blocked by policy: {policy_result.reason}"
+
+                    if policy_result.risk_level == "high":
+                        if not self._config.safety.auto_approve_safe:
+                            needs_approval = True
+                    elif policy_result.risk_level == "medium":
+                        if not self._config.safety.auto_approve_safe:
+                            needs_approval = True
+
+                    # 如果需要审批且有回调函数，则请求用户确认
+                    if needs_approval and self._confirmation_callback:
+                        approval_result = self._confirmation_callback(
+                            instruction, policy_result.risk_level
+                        )
+                        if inspect.isawaitable(approval_result):
+                            approved = await approval_result
+                        else:
+                            approved = bool(approval_result)
+
+                        if not approved:
+                            return "Operation cancelled by user"
+
+                    # 通过安全检查后执行指令
+                    result = await self.execute_instruction(
+                        instruction,
+                        user_input=user_input,
+                    )
+                    if session_history is not None:
+                        session_history.append(
+                            ConversationEntry(
+                                instruction=instruction,
+                                result=result,
+                                user_input=user_input,
+                            )
+                        )
+                    return result.message
+
             messages = self._build_graph_messages(session_history)
             final_state = await self._react_graph.run(
                 user_input=user_input,

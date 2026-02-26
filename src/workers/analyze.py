@@ -9,9 +9,9 @@ from typing import Optional
 from src.llm.client import LLMClient
 from src.types import ActionParam, ArgValue, ToolAction, WorkerResult, get_raw_output
 from src.workers.analyze_cache import (
+    DEFAULT_ANALYZE_COMMANDS,
     AnalyzeTemplate,
     AnalyzeTemplateCache,
-    DEFAULT_ANALYZE_COMMANDS,
 )
 from src.workers.base import BaseWorker
 from src.workers.shell import ShellWorker
@@ -78,8 +78,10 @@ class AnalyzeWorker(BaseWorker):
                     ActionParam(
                         name="target",
                         param_type="string",
-                        description="Object identifier: container name, PID, port number, file path, "
-                        "service name, or network interface",
+                        description=(
+                            "Object identifier: container name, PID, port number, file path, "
+                            "service name, or network interface"
+                        ),
                         required=True,
                     ),
                     ActionParam(
@@ -109,10 +111,11 @@ class AnalyzeWorker(BaseWorker):
         if target_name.isdigit():
             port = int(target_name)
             # 常见端口范围判断
-            if 1 <= port <= 65535:
+            if 1 <= port <= 65535 and (
+                port < 1024 or port in [3000, 3306, 5432, 6379, 8080, 8443, 9000, 27017]
+            ):
                 # 常见服务端口倾向于 port，较大数字倾向于 PID
-                if port < 1024 or port in [3000, 3306, 5432, 6379, 8080, 8443, 9000, 27017]:
-                    return "port"
+                return "port"
             return "process"
 
         # 以 / 开头 - 文件路径
@@ -385,10 +388,7 @@ Your response (JSON array only):"""
         # 尝试提取 JSON 数组
         # 先尝试去除 markdown 代码块
         json_match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", response, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1).strip()
-        else:
-            json_str = response.strip()
+        json_str = json_match.group(1).strip() if json_match else response.strip()
 
         try:
             parsed = json.loads(json_str)
@@ -456,17 +456,18 @@ Your response (JSON array only):"""
         )
 
         type_hint = f" ({target_type})" if target_type else ""
-        prompt = f"""Analyze this object "{target_name}"{type_hint} based on the following command outputs:
-
-{info_text}
-
-Provide a concise Chinese summary explaining:
-1. What this object is and its purpose
-2. Key configuration details (ports, volumes, environment, etc. if applicable)
-3. Current status and any notable observations
-
-Keep the summary under 200 words. Use natural language.
-If some commands failed, mention what info is missing but still provide analysis based on available data."""
+        prompt = (
+            f'Analyze this object "{target_name}"{type_hint} '
+            "based on the following command outputs:\n\n"
+            f"{info_text}\n\n"
+            "Provide a concise Chinese summary explaining:\n"
+            "1. What this object is and its purpose\n"
+            "2. Key configuration details (ports, volumes, environment, etc. if applicable)\n"
+            "3. Current status and any notable observations\n\n"
+            "Keep the summary under 200 words. Use natural language.\n"
+            "If some commands failed, mention what info is missing but still provide analysis "
+            "based on available data."
+        )
 
         return await self._llm_client.generate(
             "You are an expert ops engineer. Provide clear, actionable analysis in Chinese.",

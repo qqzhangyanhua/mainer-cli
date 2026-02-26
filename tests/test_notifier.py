@@ -7,7 +7,6 @@ import pytest
 from src.types import NotificationChannel
 from src.workers.notifier import AlertManager, NotifierWorker
 
-
 # ------------------------------------------------------------------
 # AlertManager 测试
 # ------------------------------------------------------------------
@@ -108,9 +107,11 @@ def test_alert_independent_metrics(alert_mgr: AlertManager) -> None:
 
 @pytest.fixture
 def notifier() -> NotifierWorker:
-    return NotifierWorker(channels=[
-        NotificationChannel(type="desktop", events=["warning", "critical"]),
-    ])
+    return NotifierWorker(
+        channels=[
+            NotificationChannel(type="desktop", events=["warning", "critical"]),
+        ]
+    )
 
 
 def test_notifier_name(notifier: NotifierWorker) -> None:
@@ -149,11 +150,14 @@ async def test_notifier_no_channels() -> None:
 @pytest.mark.asyncio
 async def test_notifier_desktop_channel(notifier: NotifierWorker) -> None:
     """desktop 通知不报错（即使不在桌面环境）"""
-    result = await notifier.execute("send", {
-        "message": "CPU is high",
-        "severity": "warning",
-        "title": "Test Alert",
-    })
+    result = await notifier.execute(
+        "send",
+        {
+            "message": "CPU is high",
+            "severity": "warning",
+            "title": "Test Alert",
+        },
+    )
     # desktop 发送可能成功也可能静默失败，但不应 crash
     assert isinstance(result.success, bool)
 
@@ -161,13 +165,18 @@ async def test_notifier_desktop_channel(notifier: NotifierWorker) -> None:
 @pytest.mark.asyncio
 async def test_notifier_severity_filter() -> None:
     """渠道只接收订阅级别的通知"""
-    worker = NotifierWorker(channels=[
-        NotificationChannel(type="desktop", events=["critical"]),
-    ])
-    result = await worker.execute("send", {
-        "message": "mild warning",
-        "severity": "warning",
-    })
+    worker = NotifierWorker(
+        channels=[
+            NotificationChannel(type="desktop", events=["critical"]),
+        ]
+    )
+    result = await worker.execute(
+        "send",
+        {
+            "message": "mild warning",
+            "severity": "warning",
+        },
+    )
     # warning 不在 events 中，0 个渠道
     assert result.success is True
     assert "0 个渠道" in result.message
@@ -181,7 +190,10 @@ async def test_notifier_severity_filter() -> None:
 def test_webhook_payload_slack(notifier: NotifierWorker) -> None:
     payload = notifier._build_webhook_payload(
         "https://hooks.slack.com/services/xxx",
-        "Alert", "CPU high", "critical", False,
+        "Alert",
+        "CPU high",
+        "critical",
+        False,
     )
     assert "text" in payload
 
@@ -189,7 +201,10 @@ def test_webhook_payload_slack(notifier: NotifierWorker) -> None:
 def test_webhook_payload_dingtalk(notifier: NotifierWorker) -> None:
     payload = notifier._build_webhook_payload(
         "https://oapi.dingtalk.com/robot/send",
-        "Alert", "CPU high", "warning", False,
+        "Alert",
+        "CPU high",
+        "warning",
+        False,
     )
     assert payload["msgtype"] == "text"
 
@@ -197,7 +212,10 @@ def test_webhook_payload_dingtalk(notifier: NotifierWorker) -> None:
 def test_webhook_payload_feishu(notifier: NotifierWorker) -> None:
     payload = notifier._build_webhook_payload(
         "https://open.feishu.cn/open-apis/bot/v2/hook/xxx",
-        "Alert", "Disk full", "critical", True,
+        "Alert",
+        "Disk full",
+        "critical",
+        True,
     )
     assert payload["msg_type"] == "text"
     assert "Recovered" in str(payload["content"])
@@ -206,7 +224,10 @@ def test_webhook_payload_feishu(notifier: NotifierWorker) -> None:
 def test_webhook_payload_generic(notifier: NotifierWorker) -> None:
     payload = notifier._build_webhook_payload(
         "https://example.com/webhook",
-        "Alert", "Memory high", "warning", False,
+        "Alert",
+        "Memory high",
+        "warning",
+        False,
     )
     assert "message" in payload
     assert "severity" in payload

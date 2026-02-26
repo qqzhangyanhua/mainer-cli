@@ -100,7 +100,10 @@ def test_parse_empty_output() -> None:
 
 
 def test_parse_single_service() -> None:
-    raw = '{"Name":"myapp-web-1","Service":"web","State":"running","Image":"nginx:latest","Ports":"0.0.0.0:80->80/tcp","Health":""}\n'
+    raw = (
+        '{"Name":"myapp-web-1","Service":"web","State":"running","Image":"nginx:latest",'
+        '"Ports":"0.0.0.0:80->80/tcp","Health":""}\n'
+    )
     services = ComposeWorker._parse_compose_ps(raw)
     assert len(services) == 1
     assert services[0]["name"] == "myapp-web-1"
@@ -111,9 +114,12 @@ def test_parse_single_service() -> None:
 
 def test_parse_multiple_services() -> None:
     raw = (
-        '{"Name":"app-web-1","Service":"web","State":"running","Image":"nginx","Ports":"","Health":""}\n'
-        '{"Name":"app-db-1","Service":"db","State":"running","Image":"postgres","Ports":"","Health":"healthy"}\n'
-        '{"Name":"app-redis-1","Service":"redis","State":"exited (0)","Image":"redis","Ports":"","Health":""}\n'
+        '{"Name":"app-web-1","Service":"web","State":"running","Image":"nginx",'
+        '"Ports":"","Health":""}\n'
+        '{"Name":"app-db-1","Service":"db","State":"running","Image":"postgres",'
+        '"Ports":"","Health":"healthy"}\n'
+        '{"Name":"app-redis-1","Service":"redis","State":"exited (0)","Image":"redis",'
+        '"Ports":"","Health":""}\n'
     )
     services = ComposeWorker._parse_compose_ps(raw)
     assert len(services) == 3
@@ -123,7 +129,10 @@ def test_parse_multiple_services() -> None:
 
 
 def test_parse_invalid_json_line() -> None:
-    raw = '{"Name":"ok","Service":"web","State":"running","Image":"nginx","Ports":"","Health":""}\nnot-json\n'
+    raw = (
+        '{"Name":"ok","Service":"web","State":"running","Image":"nginx","Ports":"",'
+        '"Health":""}\nnot-json\n'
+    )
     services = ComposeWorker._parse_compose_ps(raw)
     assert len(services) == 1
 
@@ -149,9 +158,7 @@ def test_build_cmd_with_file(worker: ComposeWorker) -> None:
 
 
 def test_build_cmd_with_both(worker: ComposeWorker) -> None:
-    cmd = worker._build_cmd(
-        "docker-compose", "myapp", "docker-compose.yml", "logs --tail 50"
-    )
+    cmd = worker._build_cmd("docker-compose", "myapp", "docker-compose.yml", "logs --tail 50")
     assert cmd == "docker-compose -f docker-compose.yml -p myapp logs --tail 50"
 
 

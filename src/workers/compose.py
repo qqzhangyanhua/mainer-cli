@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Union, cast
+from typing import Union
 
 from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
@@ -42,8 +42,18 @@ class ComposeWorker(BaseWorker):
                 name="status",
                 description="List all services and their state in a Compose project.",
                 params=[
-                    ActionParam(name="project", param_type="string", description="Project name (-p). Empty for auto.", required=False),
-                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
+                    ActionParam(
+                        name="project",
+                        param_type="string",
+                        description="Project name (-p). Empty for auto.",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="file",
+                        param_type="string",
+                        description="Compose file path (-f)",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -51,8 +61,18 @@ class ComposeWorker(BaseWorker):
                 name="health",
                 description="Run health check on all Compose services.",
                 params=[
-                    ActionParam(name="project", param_type="string", description="Project name (-p)", required=False),
-                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
+                    ActionParam(
+                        name="project",
+                        param_type="string",
+                        description="Project name (-p)",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="file",
+                        param_type="string",
+                        description="Compose file path (-f)",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -60,10 +80,30 @@ class ComposeWorker(BaseWorker):
                 name="logs",
                 description="Aggregate logs from one or all services in a Compose project.",
                 params=[
-                    ActionParam(name="project", param_type="string", description="Project name (-p)", required=False),
-                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
-                    ActionParam(name="service", param_type="string", description="Specific service name. Empty for all.", required=False),
-                    ActionParam(name="tail", param_type="integer", description="Number of trailing log lines. Default 100.", required=False),
+                    ActionParam(
+                        name="project",
+                        param_type="string",
+                        description="Project name (-p)",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="file",
+                        param_type="string",
+                        description="Compose file path (-f)",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="service",
+                        param_type="string",
+                        description="Specific service name. Empty for all.",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="tail",
+                        param_type="integer",
+                        description="Number of trailing log lines. Default 100.",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -71,9 +111,24 @@ class ComposeWorker(BaseWorker):
                 name="restart",
                 description="Restart services (respects dependency order).",
                 params=[
-                    ActionParam(name="project", param_type="string", description="Project name (-p)", required=False),
-                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
-                    ActionParam(name="service", param_type="string", description="Service to restart. Empty for all.", required=False),
+                    ActionParam(
+                        name="project",
+                        param_type="string",
+                        description="Project name (-p)",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="file",
+                        param_type="string",
+                        description="Compose file path (-f)",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="service",
+                        param_type="string",
+                        description="Service to restart. Empty for all.",
+                        required=False,
+                    ),
                 ],
                 risk_level="medium",
             ),
@@ -81,9 +136,24 @@ class ComposeWorker(BaseWorker):
                 name="up",
                 description="Start the Compose project (creates containers if needed).",
                 params=[
-                    ActionParam(name="project", param_type="string", description="Project name (-p)", required=False),
-                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
-                    ActionParam(name="detach", param_type="boolean", description="Run in background. Default true.", required=False),
+                    ActionParam(
+                        name="project",
+                        param_type="string",
+                        description="Project name (-p)",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="file",
+                        param_type="string",
+                        description="Compose file path (-f)",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="detach",
+                        param_type="boolean",
+                        description="Run in background. Default true.",
+                        required=False,
+                    ),
                 ],
                 risk_level="medium",
             ),
@@ -91,8 +161,18 @@ class ComposeWorker(BaseWorker):
                 name="down",
                 description="Stop and remove containers, networks for the Compose project.",
                 params=[
-                    ActionParam(name="project", param_type="string", description="Project name (-p)", required=False),
-                    ActionParam(name="file", param_type="string", description="Compose file path (-f)", required=False),
+                    ActionParam(
+                        name="project",
+                        param_type="string",
+                        description="Project name (-p)",
+                        required=False,
+                    ),
+                    ActionParam(
+                        name="file",
+                        param_type="string",
+                        description="Compose file path (-f)",
+                        required=False,
+                    ),
                 ],
                 risk_level="high",
             ),
@@ -100,23 +180,17 @@ class ComposeWorker(BaseWorker):
 
     async def _detect_compose_cmd(self) -> str:
         """检测 docker compose 命令格式（v2 优先）"""
-        result = await self._shell.execute(
-            "execute_command", {"command": "docker compose version"}
-        )
+        result = await self._shell.execute("execute_command", {"command": "docker compose version"})
         if result.success:
             return "docker compose"
 
-        result = await self._shell.execute(
-            "execute_command", {"command": "docker-compose version"}
-        )
+        result = await self._shell.execute("execute_command", {"command": "docker-compose version"})
         if result.success:
             return "docker-compose"
 
         return ""
 
-    def _build_cmd(
-        self, base: str, project: str, file: str, subcmd: str
-    ) -> str:
+    def _build_cmd(self, base: str, project: str, file: str, subcmd: str) -> str:
         """构建 compose 命令字符串"""
         parts = [base]
         if file:
@@ -126,12 +200,13 @@ class ComposeWorker(BaseWorker):
         parts.append(subcmd)
         return " ".join(parts)
 
-    async def execute(
-        self, action: str, args: dict[str, ArgValue]
-    ) -> WorkerResult:
-        dry_run = args.get("dry_run", False)
-        if isinstance(dry_run, str):
-            dry_run = dry_run.lower() == "true"
+    async def execute(self, action: str, args: dict[str, ArgValue]) -> WorkerResult:
+        dry_run_value = args.get("dry_run", False)
+        dry_run = False
+        if isinstance(dry_run_value, bool):
+            dry_run = dry_run_value
+        elif isinstance(dry_run_value, str):
+            dry_run = dry_run_value.lower() == "true"
 
         handlers = {
             "status": self._status,
@@ -158,9 +233,7 @@ class ComposeWorker(BaseWorker):
 
         return await handler(args, dry_run=dry_run)
 
-    async def _status(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _status(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """列出 compose 项目所有服务状态"""
         project = str(args.get("project", ""))
         file = str(args.get("file", ""))
@@ -182,7 +255,7 @@ class ComposeWorker(BaseWorker):
                 message=f"获取 compose 状态失败: {result.message}",
             )
 
-        raw = result.data.get("raw_output", "") if result.data else ""
+        raw = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         services = self._parse_compose_ps(str(raw))
 
         if not services:
@@ -207,9 +280,7 @@ class ComposeWorker(BaseWorker):
             task_completed=True,
         )
 
-    async def _health(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _health(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """批量健康检查所有服务"""
         project = str(args.get("project", ""))
         file = str(args.get("file", ""))
@@ -229,13 +300,11 @@ class ComposeWorker(BaseWorker):
         if not result.success:
             return WorkerResult(success=False, message=f"获取服务列表失败: {result.message}")
 
-        raw = result.data.get("raw_output", "") if result.data else ""
+        raw = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         services = self._parse_compose_ps(str(raw))
 
         if not services:
-            return WorkerResult(
-                success=True, message="未找到 compose 服务。", task_completed=True
-            )
+            return WorkerResult(success=True, message="未找到 compose 服务。", task_completed=True)
 
         # 逐服务检查健康状态
         healthy = 0
@@ -268,9 +337,7 @@ class ComposeWorker(BaseWorker):
             task_completed=True,
         )
 
-    async def _logs(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _logs(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """聚合多服务日志"""
         project = str(args.get("project", ""))
         file = str(args.get("file", ""))
@@ -298,7 +365,7 @@ class ComposeWorker(BaseWorker):
         if not result.success:
             return WorkerResult(success=False, message=f"获取日志失败: {result.message}")
 
-        raw = result.data.get("raw_output", "") if result.data else ""
+        raw = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         log_lines = str(raw).strip().split("\n") if raw else []
 
         return WorkerResult(
@@ -308,9 +375,7 @@ class ComposeWorker(BaseWorker):
             task_completed=False,  # 让 LLM 总结日志内容
         )
 
-    async def _restart(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _restart(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """重启 compose 服务（按依赖顺序）"""
         project = str(args.get("project", ""))
         file = str(args.get("file", ""))
@@ -339,9 +404,7 @@ class ComposeWorker(BaseWorker):
             task_completed=True,
         )
 
-    async def _up(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _up(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """启动 compose 项目"""
         project = str(args.get("project", ""))
         file = str(args.get("file", ""))
@@ -371,9 +434,7 @@ class ComposeWorker(BaseWorker):
             task_completed=True,
         )
 
-    async def _down(
-        self, args: dict[str, ArgValue], dry_run: bool = False
-    ) -> WorkerResult:
+    async def _down(self, args: dict[str, ArgValue], dry_run: bool = False) -> WorkerResult:
         """停止并移除 compose 项目"""
         project = str(args.get("project", ""))
         file = str(args.get("file", ""))
@@ -411,16 +472,18 @@ class ComposeWorker(BaseWorker):
                 continue
             try:
                 data = json.loads(line)
-                services.append({
-                    "name": data.get("Name", data.get("Service", "")),
-                    "service": data.get("Service", ""),
-                    "state": data.get("State", data.get("Status", "")).lower().split()[0]
-                    if data.get("State", data.get("Status", ""))
-                    else "unknown",
-                    "image": data.get("Image", ""),
-                    "ports": data.get("Ports", data.get("Publishers", "")),
-                    "health": data.get("Health", ""),
-                })
+                services.append(
+                    {
+                        "name": data.get("Name", data.get("Service", "")),
+                        "service": data.get("Service", ""),
+                        "state": data.get("State", data.get("Status", "")).lower().split()[0]
+                        if data.get("State", data.get("Status", ""))
+                        else "unknown",
+                        "image": data.get("Image", ""),
+                        "ports": data.get("Ports", data.get("Publishers", "")),
+                        "health": data.get("Health", ""),
+                    }
+                )
             except (json.JSONDecodeError, IndexError):
                 continue
 

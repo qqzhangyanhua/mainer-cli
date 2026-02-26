@@ -32,11 +32,22 @@ class PromptBuilder:
         "chat": ["respond"],
         "shell": ["execute_command"],
         "system": [
-            "list_files", "find_large_files", "check_disk_usage", "delete_files",
-            "write_file", "append_to_file", "replace_in_file",
+            "list_files",
+            "find_large_files",
+            "check_disk_usage",
+            "delete_files",
+            "write_file",
+            "append_to_file",
+            "replace_in_file",
         ],
         "container": [
-            "list_containers", "inspect_container", "logs", "restart", "stop", "start", "stats",
+            "list_containers",
+            "inspect_container",
+            "logs",
+            "restart",
+            "stop",
+            "start",
+            "stats",
         ],
         "audit": ["log_operation"],
         "analyze": ["explain"],
@@ -44,8 +55,12 @@ class PromptBuilder:
         "deploy": ["deploy"],
         "git": ["clone", "pull", "status"],
         "monitor": [
-            "snapshot", "check_port", "check_http", "check_process",
-            "top_processes", "find_service_port",
+            "snapshot",
+            "check_port",
+            "check_http",
+            "check_process",
+            "top_processes",
+            "find_service_port",
         ],
         "log_analyzer": ["analyze_lines", "analyze_file", "analyze_container"],
         "remote": ["execute", "list_hosts", "test_connection"],
@@ -94,14 +109,16 @@ class PromptBuilder:
                     param_parts = []
                     for p in action.params:
                         opt = "" if p.required else ", optional"
-                        param_parts.append(f'{p.name}: {p.param_type}{opt} — {p.description}')
+                        param_parts.append(f"{p.name}: {p.param_type}{opt} — {p.description}")
                     params_str = " | Params: " + "; ".join(param_parts)
 
                 risk_tag = ""
                 if action.risk_level != "safe":
                     risk_tag = f" [{action.risk_level}]"
 
-                line = f"- **{worker_name}.{action.name}**{risk_tag}: {action.description}{params_str}"
+                line = (
+                    f"- **{worker_name}.{action.name}**{risk_tag}: {action.description}{params_str}"
+                )
                 action_lines.append(line)
 
             sections.append(header + "\n" + "\n".join(action_lines))
@@ -127,10 +144,7 @@ class PromptBuilder:
         if INVENTORY_PATH.exists():
             content = INVENTORY_PATH.read_text(encoding="utf-8").strip()
             if content:
-                inventory_section = (
-                    "\n\n## Server inventory (infrastructure context)\n"
-                    + content
-                )
+                inventory_section = "\n\n## Server inventory (infrastructure context)\n" + content
 
         if available_workers:
             tool_section = self.build_tool_descriptions(available_workers)

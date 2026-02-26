@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
-from typing import cast
 
 from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
 from src.workers.base import BaseWorker
@@ -56,17 +54,31 @@ class ContainerWorker(BaseWorker):
         return [
             ToolAction(
                 name="list_containers",
-                description="List Docker containers. Use when user wants to see running or all containers.",
+                description=(
+                    "List Docker containers. Use when user wants to see running or all containers."
+                ),
                 params=[
-                    ActionParam(name="all", param_type="boolean", description="Include stopped containers. Default false.", required=False),
+                    ActionParam(
+                        name="all",
+                        param_type="boolean",
+                        description="Include stopped containers. Default false.",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
             ToolAction(
                 name="inspect_container",
-                description="Inspect container details (config, state, network). Use container_id or name.",
+                description=(
+                    "Inspect container details (config, state, network). Use container_id or name."
+                ),
                 params=[
-                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                    ActionParam(
+                        name="container_id",
+                        param_type="string",
+                        description="Container ID or name",
+                        required=True,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -74,8 +86,18 @@ class ContainerWorker(BaseWorker):
                 name="logs",
                 description="Fetch container logs. Use for debugging or viewing output.",
                 params=[
-                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
-                    ActionParam(name="tail", param_type="integer", description="Number of trailing lines to fetch. Default 100.", required=False),
+                    ActionParam(
+                        name="container_id",
+                        param_type="string",
+                        description="Container ID or name",
+                        required=True,
+                    ),
+                    ActionParam(
+                        name="tail",
+                        param_type="integer",
+                        description="Number of trailing lines to fetch. Default 100.",
+                        required=False,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -83,7 +105,12 @@ class ContainerWorker(BaseWorker):
                 name="restart",
                 description="Restart a container. Use when service needs restart.",
                 params=[
-                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                    ActionParam(
+                        name="container_id",
+                        param_type="string",
+                        description="Container ID or name",
+                        required=True,
+                    ),
                 ],
                 risk_level="medium",
             ),
@@ -91,7 +118,12 @@ class ContainerWorker(BaseWorker):
                 name="stop",
                 description="Stop a running container.",
                 params=[
-                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                    ActionParam(
+                        name="container_id",
+                        param_type="string",
+                        description="Container ID or name",
+                        required=True,
+                    ),
                 ],
                 risk_level="medium",
             ),
@@ -99,7 +131,12 @@ class ContainerWorker(BaseWorker):
                 name="start",
                 description="Start a stopped container.",
                 params=[
-                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                    ActionParam(
+                        name="container_id",
+                        param_type="string",
+                        description="Container ID or name",
+                        required=True,
+                    ),
                 ],
                 risk_level="medium",
             ),
@@ -107,7 +144,12 @@ class ContainerWorker(BaseWorker):
                 name="stats",
                 description="Get container CPU and memory usage statistics.",
                 params=[
-                    ActionParam(name="container_id", param_type="string", description="Container ID or name", required=True),
+                    ActionParam(
+                        name="container_id",
+                        param_type="string",
+                        description="Container ID or name",
+                        required=True,
+                    ),
                 ],
                 risk_level="safe",
             ),
@@ -143,9 +185,12 @@ class ContainerWorker(BaseWorker):
     ) -> WorkerResult:
         """执行容器操作"""
         # 检查 dry_run 模式
-        dry_run = args.get("dry_run", False)
-        if isinstance(dry_run, str):
-            dry_run = dry_run.lower() == "true"
+        dry_run_value = args.get("dry_run", False)
+        dry_run = False
+        if isinstance(dry_run_value, bool):
+            dry_run = dry_run_value
+        elif isinstance(dry_run_value, str):
+            dry_run = dry_run_value.lower() == "true"
 
         handlers = {
             "list_containers": self._list_containers,
@@ -213,7 +258,7 @@ class ContainerWorker(BaseWorker):
 
         # 解析 JSON 输出
         data: list[dict[str, str | int]] = []
-        raw_output = result.data.get("raw_output", "") if result.data else ""
+        raw_output = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         if isinstance(raw_output, str):
             for line in raw_output.strip().split("\n"):
                 if not line:
@@ -275,7 +320,7 @@ class ContainerWorker(BaseWorker):
             )
 
         # 解析 JSON 输出
-        raw_output = result.data.get("raw_output", "") if result.data else ""
+        raw_output = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         if isinstance(raw_output, str):
             try:
                 inspect_data = json.loads(raw_output)
@@ -285,7 +330,7 @@ class ContainerWorker(BaseWorker):
                     state = container.get("State", {})
                     config = container.get("Config", {})
 
-                    data: dict[str, str | int] = {
+                    data: dict[str, str | int | bool] = {
                         "id": container.get("Id", "")[:12],
                         "name": container.get("Name", "").lstrip("/"),
                         "status": state.get("Status", ""),
@@ -296,8 +341,10 @@ class ContainerWorker(BaseWorker):
 
                     return WorkerResult(
                         success=True,
-                        data=cast(dict[str, str | int], data),
-                        message=f"Container {container_id} status: {state.get('Status', 'unknown')}",
+                        data=data,
+                        message=(
+                            f"Container {container_id} status: {state.get('Status', 'unknown')}"
+                        ),
                         task_completed=True,
                     )
             except json.JSONDecodeError:
@@ -347,7 +394,7 @@ class ContainerWorker(BaseWorker):
                 message=f"Failed to get logs: {result.message}",
             )
 
-        logs = result.data.get("raw_output", "") if result.data else ""
+        logs = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
 
         return WorkerResult(
             success=True,
@@ -515,7 +562,7 @@ class ContainerWorker(BaseWorker):
             )
 
         # 解析 JSON 输出
-        raw_output = result.data.get("raw_output", "") if result.data else ""
+        raw_output = result.data.get("raw_output", "") if isinstance(result.data, dict) else ""
         if isinstance(raw_output, str) and raw_output.strip():
             try:
                 stats = json.loads(raw_output.strip())
@@ -545,7 +592,7 @@ class ContainerWorker(BaseWorker):
                 mem_usage = parse_memory(mem_parts[0]) if len(mem_parts) > 0 else 0
                 mem_limit = parse_memory(mem_parts[1]) if len(mem_parts) > 1 else 0
 
-                data: dict[str, str | int] = {
+                data: dict[str, str | int | bool] = {
                     "cpu_percent": cpu_percent,
                     "memory_usage_mb": mem_usage,
                     "memory_limit_mb": mem_limit,
@@ -553,8 +600,11 @@ class ContainerWorker(BaseWorker):
 
                 return WorkerResult(
                     success=True,
-                    data=cast(dict[str, str | int], data),
-                    message=f"Container {container_id}: CPU {cpu_percent}%, Memory {mem_usage}/{mem_limit}MB",
+                    data=data,
+                    message=(
+                        f"Container {container_id}: CPU {cpu_percent}%, "
+                        f"Memory {mem_usage}/{mem_limit}MB"
+                    ),
                     task_completed=True,
                 )
             except json.JSONDecodeError:

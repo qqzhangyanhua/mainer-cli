@@ -231,7 +231,7 @@ class TestPredefinedScenarios:
     def test_all_scenarios_have_required_fields(self) -> None:
         """测试所有场景都有必填字段"""
         for scenario in SCENARIOS:
-            assert scenario.id, f"场景缺少 ID"
+            assert scenario.id, "场景缺少 ID"
             assert scenario.title, f"场景 {scenario.id} 缺少标题"
             assert scenario.description, f"场景 {scenario.id} 缺少描述"
             assert scenario.category, f"场景 {scenario.id} 缺少分类"

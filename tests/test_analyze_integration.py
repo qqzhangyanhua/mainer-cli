@@ -9,8 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.workers.analyze import DEFAULT_ANALYZE_COMMANDS, AnalyzeWorker
-from src.workers.analyze import AnalyzeTemplateCache
+from src.workers.analyze import DEFAULT_ANALYZE_COMMANDS, AnalyzeTemplateCache, AnalyzeWorker
 
 
 class MockLLMClient:

@@ -121,9 +121,12 @@ class DeployWorker(BaseWorker):
         else:
             target_dir = target_dir.strip()
 
-        dry_run = args.get("dry_run", False)
-        if isinstance(dry_run, str):
-            dry_run = dry_run.lower() == "true"
+        dry_run_value = args.get("dry_run", False)
+        dry_run = False
+        if isinstance(dry_run_value, bool):
+            dry_run = dry_run_value
+        elif isinstance(dry_run_value, str):
+            dry_run = dry_run_value.lower() == "true"
 
         steps_log: list[str] = []
 
@@ -143,7 +146,7 @@ class DeployWorker(BaseWorker):
             {"repo_url": repo_url},
         )
         readme_content = ""
-        if readme_result.success and readme_result.data:
+        if readme_result.success and isinstance(readme_result.data, dict):
             readme_content = str(readme_result.data.get("content", ""))
 
         self._report_progress("deploy", "  获取文件列表...")
@@ -152,7 +155,7 @@ class DeployWorker(BaseWorker):
             {"repo_url": repo_url},
         )
         key_files: list[str] = []
-        if files_result.success and files_result.data:
+        if files_result.success and isinstance(files_result.data, dict):
             key_files_str = files_result.data.get("key_files", "")
             if isinstance(key_files_str, str) and key_files_str:
                 key_files = [f.strip() for f in key_files_str.split(",")]

@@ -24,6 +24,7 @@ class MonitorMetric(BaseModel):
     status: MonitorStatus = Field(..., description="状态：ok/warning/critical")
     message: str = Field(..., description="人类可读描述")
 
+
 ArgValue = Union[str, int, bool, list[str], dict[str, str]]
 
 # 支持的分析对象类型
@@ -220,6 +221,7 @@ class AlertEvent(BaseModel):
 
 # 通知渠道类型
 NotificationChannelType = Literal["webhook", "desktop"]
+DEFAULT_ALERT_EVENTS: list[AlertSeverity] = ["critical"]
 
 
 class NotificationChannel(BaseModel):
@@ -228,7 +230,8 @@ class NotificationChannel(BaseModel):
     type: NotificationChannelType = Field(..., description="渠道类型")
     url: Optional[str] = Field(default=None, description="Webhook URL")
     events: list[AlertSeverity] = Field(
-        default_factory=lambda: ["critical"], description="订阅的事件级别"
+        default_factory=lambda: DEFAULT_ALERT_EVENTS.copy(),
+        description="订阅的事件级别",
     )
     headers: Optional[dict[str, str]] = Field(default=None, description="自定义 HTTP 头")
 

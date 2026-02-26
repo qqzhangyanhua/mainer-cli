@@ -6,7 +6,7 @@ import pytest
 
 from src.config.manager import OpsAIConfig
 from src.orchestrator.engine import OrchestratorEngine
-from src.types import Instruction, WorkerResult
+from src.types import Instruction
 
 
 class TestOrchestratorEngine:
@@ -16,6 +16,7 @@ class TestOrchestratorEngine:
     def engine(self) -> OrchestratorEngine:
         """创建测试引擎"""
         config = OpsAIConfig()
+        config.performance.enable_command_cache = False
         return OrchestratorEngine(config)
 
     def test_get_worker(self, engine: OrchestratorEngine) -> None:
@@ -161,3 +162,84 @@ class TestOrchestratorEngine:
                 session_id="session-1",
                 approval_granted=True,
             )
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_safe_command(self) -> None:
+        """测试缓存命中安全命令（无需审批）"""
+        config = OpsAIConfig()
+        config.performance.enable_command_cache = True
+        config.performance.cache_confidence_threshold = 0.8
+        engine = OrchestratorEngine(config)
+
+        result = await engine.react_loop_graph("查看磁盘使用情况")
+
+        assert result is not None
+        assert "Error" not in result
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_high_risk_requires_approval(self) -> None:
+        """测试缓存命中高风险命令需要审批"""
+        config = OpsAIConfig()
+        config.performance.enable_command_cache = True
+        config.performance.cache_confidence_threshold = 0.8
+        config.safety.auto_approve_safe = False
+
+        approval_called = False
+
+        def mock_confirmation(instruction: Instruction, risk_level: str) -> bool:
+            nonlocal approval_called
+            approval_called = True
+            return False  # 拒绝执行
+
+        engine = OrchestratorEngine(config, confirmation_callback=mock_confirmation)
+
+        # 添加一个高风险命令模式到缓存
+        from src.orchestrator.command_cache import CommandPattern
+
+        high_risk_pattern = CommandPattern(
+            pattern=r"^删除所有文件$",
+            worker="system",
+            action="delete_files",
+            risk_level="high",
+            confidence=0.9,
+        )
+        engine._command_cache.add_pattern(high_risk_pattern)
+
+        result = await engine.react_loop_graph("删除所有文件")
+
+        assert approval_called, "高风险命令应该触发审批回调"
+        assert result == "Operation cancelled by user"
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_medium_risk_with_approval(self) -> None:
+        """测试缓存命中中等风险命令通过审批后执行"""
+        config = OpsAIConfig()
+        config.performance.enable_command_cache = True
+        config.performance.cache_confidence_threshold = 0.8
+        config.safety.auto_approve_safe = False
+
+        approval_called = False
+
+        def mock_confirmation(instruction: Instruction, risk_level: str) -> bool:
+            nonlocal approval_called
+            approval_called = True
+            return True  # 批准执行
+
+        engine = OrchestratorEngine(config, confirmation_callback=mock_confirmation)
+
+        # 添加一个中等风险命令模式到缓存
+        from src.orchestrator.command_cache import CommandPattern
+
+        medium_risk_pattern = CommandPattern(
+            pattern=r"^重启容器$",
+            worker="container",
+            action="restart",
+            risk_level="medium",
+            confidence=0.9,
+        )
+        engine._command_cache.add_pattern(medium_risk_pattern)
+
+        result = await engine.react_loop_graph("重启容器")
+
+        assert approval_called, "中等风险命令应该触发审批回调"
+        assert result != "Operation cancelled by user"

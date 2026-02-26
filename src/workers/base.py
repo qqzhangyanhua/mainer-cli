@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from src.types import ActionParam, ArgValue, ToolAction, WorkerResult
+from src.types import ArgValue, ToolAction, WorkerResult
 
 
 class BaseWorker(ABC):
@@ -48,10 +48,7 @@ class BaseWorker(ABC):
         Returns:
             ToolAction 列表
         """
-        return [
-            ToolAction(name=cap, description="", params=[])
-            for cap in self.get_capabilities()
-        ]
+        return [ToolAction(name=cap, description="", params=[]) for cap in self.get_capabilities()]
 
     def get_tool_schema(self) -> list[dict[str, object]]:
         """生成 OpenAI Function Calling 格式的 tool schema

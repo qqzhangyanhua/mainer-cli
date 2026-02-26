@@ -200,9 +200,7 @@ class SessionMemory:
             count = len(self._entries)
             self._entries.clear()
         else:
-            keys_to_del = [
-                k for k, v in self._entries.items() if v.category == category
-            ]
+            keys_to_del = [k for k, v in self._entries.items() if v.category == category]
             count = len(keys_to_del)
             for k in keys_to_del:
                 del self._entries[k]

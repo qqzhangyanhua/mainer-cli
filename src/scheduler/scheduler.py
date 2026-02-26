@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
 from pathlib import Path
-from typing import Literal, Optional, Union
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -36,10 +35,7 @@ class CronField:
             if "/" in part:
                 base, step_str = part.split("/", 1)
                 step = int(step_str)
-                if base == "*":
-                    start = min_val
-                else:
-                    start = int(base)
+                start = min_val if base == "*" else int(base)
                 values.update(range(start, max_val + 1, step))
             elif "-" in part:
                 lo, hi = part.split("-", 1)
@@ -92,8 +88,7 @@ class CronExpr:
         """
         # 从下一分钟开始搜索
         t = time.localtime(after)
-        base = time.mktime((t.tm_year, t.tm_mon, t.tm_mday,
-                            t.tm_hour, t.tm_min + 1, 0, 0, 0, -1))
+        base = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, t.tm_hour, t.tm_min + 1, 0, 0, 0, -1))
 
         for _ in range(max_search_minutes):
             if self.matches(base):
@@ -174,9 +169,7 @@ class Scheduler:
                 with open(self._history_path, encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, list):
-                    self._history = [
-                        JobRunRecord.model_validate(r) for r in data
-                    ]
+                    self._history = [JobRunRecord.model_validate(r) for r in data]
             except (json.JSONDecodeError, ValueError):
                 pass
 
@@ -351,9 +344,7 @@ class Scheduler:
         self._enforce_history_limit()
         self._save_history()
 
-    def get_history(
-        self, job_id: Optional[str] = None, limit: int = 20
-    ) -> list[JobRunRecord]:
+    def get_history(self, job_id: Optional[str] = None, limit: int = 20) -> list[JobRunRecord]:
         """获取执行历史
 
         Args:

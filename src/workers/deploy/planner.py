@@ -6,11 +6,10 @@ import os
 import platform
 
 from src.llm.client import LLMClient
-from src.workers.deploy.types import DEPLOY_PLAN_PROMPT
-from src.workers.shell import ShellWorker
 
 # 回调类型复用
-from src.workers.deploy.types import ProgressCallback
+from src.workers.deploy.types import DEPLOY_PLAN_PROMPT, ProgressCallback
+from src.workers.shell import ShellWorker
 
 
 class DeployPlanner:
@@ -50,7 +49,7 @@ class DeployPlanner:
             "execute_command",
             {"command": "which python3"},
         )
-        if python_result.success and python_result.data:
+        if python_result.success and isinstance(python_result.data, dict):
             stdout = python_result.data.get("stdout", "")
             if isinstance(stdout, str) and stdout.strip():
                 env_info["python"] = f"python3 ({stdout.strip()})"
@@ -59,7 +58,7 @@ class DeployPlanner:
             "execute_command",
             {"command": "docker version"},
         )
-        if docker_result.success and docker_result.data:
+        if docker_result.success and isinstance(docker_result.data, dict):
             stdout = docker_result.data.get("stdout", "")
             if isinstance(stdout, str) and stdout.strip():
                 env_info["docker"] = stdout.strip().splitlines()[0]
@@ -77,7 +76,7 @@ class DeployPlanner:
             "execute_command",
             {"command": "which node"},
         )
-        if node_result.success and node_result.data:
+        if node_result.success and isinstance(node_result.data, dict):
             stdout = node_result.data.get("stdout", "")
             if isinstance(stdout, str) and stdout.strip():
                 env_info["node"] = f"installed ({stdout.strip()})"
@@ -86,7 +85,7 @@ class DeployPlanner:
             "execute_command",
             {"command": "which uv"},
         )
-        if uv_result.success and uv_result.data:
+        if uv_result.success and isinstance(uv_result.data, dict):
             stdout = uv_result.data.get("stdout", "")
             if isinstance(stdout, str) and stdout.strip():
                 env_info["uv"] = f"installed ({stdout.strip()})"
@@ -104,7 +103,7 @@ class DeployPlanner:
             if os.path.getsize(file_path) > 50000:
                 return "(文件过大，跳过)"
 
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(file_path, encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()[:max_lines]
                 content = "".join(lines)
                 if len(lines) == max_lines:

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+from typing import Optional
 
 from rich.syntax import Syntax
 from textual.app import ComposeResult
@@ -11,6 +13,8 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Static
 
+from src.context.detector import EnvironmentInfo
+from src.orchestrator.scenarios import Scenario
 from src.types import Instruction, RiskLevel
 
 
@@ -210,14 +214,14 @@ class UserChoiceScreen(ModalScreen[str]):
         super().__init__()
         self._question = question
         self._options = options
-        self._context = context
+        self._context_text = context
         self._custom_input_visible = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="choice-dialog"):
             yield Static(f"[bold]{self._question}[/bold]", id="choice-title")
-            if self._context:
-                yield Static(self._context, id="choice-context")
+            if self._context_text:
+                yield Static(self._context_text, id="choice-context")
             with Vertical(id="choice-options"):
                 for i, option in enumerate(self._options, 1):
                     btn_id = f"choice-btn-{i}"
@@ -286,6 +290,148 @@ class UserChoiceScreen(ModalScreen[str]):
                 self._show_custom_input()
             else:
                 self.dismiss(selected)
+
+
+class FirstRunScreen(ModalScreen[Optional[str]]):
+    """首次运行引导弹窗"""
+
+    CSS = """
+    FirstRunScreen {
+        align: center middle;
+    }
+
+    #first-run-dialog {
+        width: 80%;
+        max-width: 90;
+        border: heavy $primary;
+        padding: 1 2;
+        background: $surface;
+    }
+
+    #first-run-title {
+        text-style: bold;
+        color: $primary;
+        margin-bottom: 1;
+    }
+
+    #first-run-env {
+        margin-bottom: 1;
+    }
+
+    .first-run-section {
+        margin-top: 1;
+        color: $text-muted;
+    }
+
+    .first-run-button {
+        width: 100%;
+        margin: 0 0 1 0;
+    }
+
+    .first-run-button:focus {
+        background: $primary;
+    }
+
+    #first-run-skip {
+        width: 16;
+        margin: 1 auto 0 auto;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "skip", "Skip"),
+    ]
+
+    def __init__(
+        self,
+        env_info: EnvironmentInfo,
+        suggestions: list[str],
+        scenarios: list[Scenario],
+    ) -> None:
+        super().__init__()
+        self._env_info = env_info
+        self._suggestions = suggestions
+        self._scenarios = scenarios
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="first-run-dialog"):
+            yield Static("🎉 欢迎使用 OpsAI", id="first-run-title")
+            yield Static(self._format_env_info(), id="first-run-env")
+
+            yield Static("推荐操作", classes="first-run-section")
+            for idx, suggestion in enumerate(self._suggestions, 1):
+                yield Button(
+                    f"[{idx}] {suggestion}",
+                    id=f"first-run-cmd-{idx}",
+                    classes="first-run-button",
+                )
+
+            if self._scenarios:
+                yield Static("推荐场景", classes="first-run-section")
+                for scenario in self._scenarios:
+                    yield Button(
+                        f"{scenario.icon} {scenario.title}",
+                        id=f"first-run-scenario-{scenario.id}",
+                        classes="first-run-button",
+                    )
+
+            yield Button("稍后再说", id="first-run-skip")
+
+    def on_mount(self) -> None:
+        buttons = self.query(".first-run-button")
+        if buttons:
+            buttons.first().focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id or ""
+        if button_id.startswith("first-run-cmd-"):
+            try:
+                index = int(button_id.split("-")[-1]) - 1
+            except ValueError:
+                self.dismiss(None)
+                return
+            if 0 <= index < len(self._suggestions):
+                self.dismiss(self._suggestions[index])
+                return
+
+        if button_id.startswith("first-run-scenario-"):
+            scenario_id = button_id.replace("first-run-scenario-", "")
+            if scenario_id:
+                self.dismiss(f"/scenario {scenario_id}")
+                return
+
+        self.dismiss(None)
+
+    def action_skip(self) -> None:
+        self.dismiss(None)
+
+    def _format_env_info(self) -> str:
+        parts = ["检测到你的环境："]
+
+        os_info = f"{self._env_info.os_type} {self._env_info.os_version}"
+        parts.append(f"  • 系统: {os_info}")
+
+        if self._env_info.has_docker:
+            parts.append(f"  • Docker: {self._env_info.docker_containers} 个运行中")
+        else:
+            parts.append("  • Docker: 未运行")
+
+        if self._env_info.has_systemd:
+            if self._env_info.systemd_services:
+                services = ", ".join(self._env_info.systemd_services[:3])
+                parts.append(f"  • Systemd: {services}")
+            else:
+                parts.append("  • Systemd: 可用")
+
+        if self._env_info.has_kubernetes:
+            parts.append("  • Kubernetes: 可用")
+
+        if self._env_info.disk_usage > 0:
+            parts.append(f"  • 磁盘使用率: {self._env_info.disk_usage:.0f}%")
+        if self._env_info.memory_usage > 0:
+            parts.append(f"  • 内存使用率: {self._env_info.memory_usage:.0f}%")
+
+        return "\n".join(parts)
 
 
 class SuggestedCommandScreen(ModalScreen[bool]):
@@ -374,8 +520,6 @@ class SuggestedCommandScreen(ModalScreen[bool]):
 
     def _do_copy(self) -> None:
         text = "\n".join(self._commands)
-        try:
+        with contextlib.suppress(AttributeError, Exception):
             self.app.copy_to_clipboard(text)
-        except (AttributeError, Exception):
-            pass
         self.dismiss(True)

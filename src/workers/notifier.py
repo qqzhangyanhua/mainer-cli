@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import platform
 import subprocess
-from typing import Optional, Union
+from typing import Optional
 
 import httpx
 
@@ -118,9 +118,7 @@ class NotifierWorker(BaseWorker):
             raise ValueError("Webhook URL not configured")
 
         # 通用 JSON payload（兼容大多数 webhook 平台）
-        payload = self._build_webhook_payload(
-            channel.url, title, message, severity, recovered
-        )
+        payload = self._build_webhook_payload(channel.url, title, message, severity, recovered)
 
         headers = {"Content-Type": "application/json"}
         if channel.headers:
@@ -137,7 +135,7 @@ class NotifierWorker(BaseWorker):
         message: str,
         severity: AlertSeverity,
         recovered: bool,
-    ) -> dict[str, Union[str, list[dict[str, str]]]]:
+    ) -> dict[str, object]:
         """根据 URL 猜测平台，构建对应 payload"""
         icon = "[Recovered]" if recovered else f"[{severity.upper()}]"
         full_message = f"{icon} {title}\n{message}"
@@ -178,9 +176,7 @@ class NotifierWorker(BaseWorker):
     # ------------------------------------------------------------------
     # Desktop notification
     # ------------------------------------------------------------------
-    def _send_desktop(
-        self, title: str, message: str, severity: AlertSeverity
-    ) -> None:
+    def _send_desktop(self, title: str, message: str, severity: AlertSeverity) -> None:
         system = platform.system()
 
         if system == "Darwin":

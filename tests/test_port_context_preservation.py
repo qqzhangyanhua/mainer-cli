@@ -66,7 +66,8 @@ class TestPortContextPreservation:
 
         workers: dict[str, object] = {"monitor": MonitorWorker()}
         detailed_prompt = prompt_builder.build_system_prompt(
-            env_context, available_workers=workers  # type: ignore[arg-type]
+            env_context,
+            available_workers=workers,  # type: ignore[arg-type]
         )
         assert "monitor.find_service_port" in detailed_prompt
 

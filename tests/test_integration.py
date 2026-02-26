@@ -17,7 +17,9 @@ class TestIntegration:
         """创建测试配置"""
         config_path = tmp_path / ".opsai" / "config.json"
         manager = ConfigManager(config_path=config_path)
-        return manager.load()
+        config = manager.load()
+        config.performance.enable_command_cache = False
+        return config
 
     @pytest.mark.asyncio
     async def test_full_workflow_safe_operation(self, config: OpsAIConfig) -> None:

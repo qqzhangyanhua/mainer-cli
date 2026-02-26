@@ -10,8 +10,8 @@ from typing import Optional
 
 from src.llm.client import LLMClient
 from src.workers.deploy.types import (
-    ConfirmationCallback,
     DIAGNOSE_ERROR_PROMPT,
+    ConfirmationCallback,
     ProgressCallback,
 )
 from src.workers.shell import ShellWorker
@@ -110,62 +110,66 @@ class DeployDiagnoser:
         """处理被拦截的命令 - 智能替代方案"""
 
         # 场景1：Python 生成密钥命令包含分号被拦截
-        if "python" in command and ("secrets" in command or "random" in command):
-            if "';'" in error or "dangerous pattern" in error.lower():
-                self._report_progress(
-                    "deploy", "    🔄 检测到 Python 命令被拦截（包含分号），尝试 openssl 替代..."
-                )
-                # 替换为 openssl 命令
-                # 检测是创建 .env 文件还是只生成密钥
-                if "> .env" in command or ">> .env" in command:
-                    # 直接写入 .env
-                    return {
-                        "action": "fix",
-                        "thinking": [
-                            "观察：Python 命令包含分号被安全系统拦截",
-                            "分析：这是生成 SECRET_KEY 并写入 .env 的命令",
-                            "决策：使用 openssl rand -hex 32 替代，避免分号",
-                        ],
-                        "new_command": "echo SECRET_KEY=$(openssl rand -hex 32) > .env",
-                        "cause": "Python 命令被拦截，已改用 openssl 生成密钥",
-                    }
-                else:
-                    # 只是生成密钥
-                    return {
-                        "action": "fix",
-                        "thinking": [
-                            "观察：Python 命令包含分号被安全系统拦截",
-                            "分析：这是生成随机密钥的命令",
-                            "决策：使用 openssl rand -hex 32 替代",
-                        ],
-                        "new_command": "openssl rand -hex 32",
-                        "cause": "Python 命令被拦截，已改用 openssl",
-                    }
+        if (
+            "python" in command
+            and ("secrets" in command or "random" in command)
+            and ("';'" in error or "dangerous pattern" in error.lower())
+        ):
+            self._report_progress(
+                "deploy", "    🔄 检测到 Python 命令被拦截（包含分号），尝试 openssl 替代..."
+            )
+            # 替换为 openssl 命令
+            # 检测是创建 .env 文件还是只生成密钥
+            if "> .env" in command or ">> .env" in command:
+                # 直接写入 .env
+                return {
+                    "action": "fix",
+                    "thinking": [
+                        "观察：Python 命令包含分号被安全系统拦截",
+                        "分析：这是生成 SECRET_KEY 并写入 .env 的命令",
+                        "决策：使用 openssl rand -hex 32 替代，避免分号",
+                    ],
+                    "new_command": "echo SECRET_KEY=$(openssl rand -hex 32) > .env",
+                    "cause": "Python 命令被拦截，已改用 openssl 生成密钥",
+                }
+            else:
+                # 只是生成密钥
+                return {
+                    "action": "fix",
+                    "thinking": [
+                        "观察：Python 命令包含分号被安全系统拦截",
+                        "分析：这是生成随机密钥的命令",
+                        "决策：使用 openssl rand -hex 32 替代",
+                    ],
+                    "new_command": "openssl rand -hex 32",
+                    "cause": "Python 命令被拦截，已改用 openssl",
+                }
 
         # 场景2：包含 && 或 || 的命令链被拦截
-        if "&&" in command or "||" in command:
-            if "'&&'" in error or "dangerous pattern" in error.lower():
-                # 尝试分解为单独的命令
-                self._report_progress("deploy", "    🔄 检测到命令链被拦截，尝试分解为独立命令...")
+        if ("&&" in command or "||" in command) and (
+            "'&&'" in error or "dangerous pattern" in error.lower()
+        ):
+            # 尝试分解为单独的命令
+            self._report_progress("deploy", "    🔄 检测到命令链被拦截，尝试分解为独立命令...")
 
-                # 简单分解（实际应该更智能）
-                if "&&" in command:
-                    commands = [cmd.strip() for cmd in command.split("&&")]
-                elif "||" in command:
-                    commands = [cmd.strip() for cmd in command.split("||")[:1]]  # 只取第一个
-                else:
-                    commands = []
+            # 简单分解（实际应该更智能）
+            if "&&" in command:
+                commands = [cmd.strip() for cmd in command.split("&&")]
+            elif "||" in command:
+                commands = [cmd.strip() for cmd in command.split("||")[:1]]  # 只取第一个
+            else:
+                commands = []
 
-                if commands:
-                    return {
-                        "action": "fix",
-                        "thinking": [
-                            "观察：命令链包含 && 或 || 被安全系统拦截",
-                            "决策：分解为独立命令逐个执行",
-                        ],
-                        "commands": commands,
-                        "cause": "命令链被拦截，已分解为独立命令",
-                    }
+            if commands:
+                return {
+                    "action": "fix",
+                    "thinking": [
+                        "观察：命令链包含 && 或 || 被安全系统拦截",
+                        "决策：分解为独立命令逐个执行",
+                    ],
+                    "commands": commands,
+                    "cause": "命令链被拦截，已分解为独立命令",
+                }
 
         # 场景3：包含重定向的命令被拦截（但实际上 > 和 >> 在某些情况下是允许的）
         # 这里不处理，让 LLM 处理更复杂的情况

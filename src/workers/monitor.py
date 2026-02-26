@@ -26,9 +26,7 @@ class MonitorWorker(BaseWorker):
     所有操作均为只读，risk_level = safe。
     """
 
-    def __init__(
-        self, thresholds: Union[dict[str, tuple[float, float]], None] = None
-    ) -> None:
+    def __init__(self, thresholds: Union[dict[str, tuple[float, float]], None] = None) -> None:
         self._thresholds = thresholds or _DEFAULT_THRESHOLDS
 
     def _judge(self, value: float, category: str) -> MonitorStatus:
@@ -54,8 +52,12 @@ class MonitorWorker(BaseWorker):
 
     def get_capabilities(self) -> list[str]:
         return [
-            "snapshot", "check_port", "check_http",
-            "check_process", "top_processes", "find_service_port",
+            "snapshot",
+            "check_port",
+            "check_http",
+            "check_process",
+            "top_processes",
+            "find_service_port",
         ]
 
     def get_actions(self) -> list[ToolAction]:
@@ -78,8 +80,10 @@ class MonitorWorker(BaseWorker):
                 params=[
                     ActionParam(name="port", param_type="integer", description="TCP port number"),
                     ActionParam(
-                        name="host", param_type="string",
-                        description="Target host (default: localhost)", required=False,
+                        name="host",
+                        param_type="string",
+                        description="Target host (default: localhost)",
+                        required=False,
                     ),
                 ],
             ),
@@ -89,8 +93,10 @@ class MonitorWorker(BaseWorker):
                 params=[
                     ActionParam(name="url", param_type="string", description="URL to check"),
                     ActionParam(
-                        name="timeout", param_type="integer",
-                        description="Timeout in seconds (default: 5)", required=False,
+                        name="timeout",
+                        param_type="integer",
+                        description="Timeout in seconds (default: 5)",
+                        required=False,
                     ),
                 ],
             ),
@@ -99,7 +105,8 @@ class MonitorWorker(BaseWorker):
                 description="Check if a process is running by name",
                 params=[
                     ActionParam(
-                        name="name", param_type="string",
+                        name="name",
+                        param_type="string",
                         description="Process name to search for",
                     ),
                 ],
@@ -109,12 +116,16 @@ class MonitorWorker(BaseWorker):
                 description="List top processes by CPU or memory usage",
                 params=[
                     ActionParam(
-                        name="sort_by", param_type="string",
-                        description="Sort by: cpu or memory (default: cpu)", required=False,
+                        name="sort_by",
+                        param_type="string",
+                        description="Sort by: cpu or memory (default: cpu)",
+                        required=False,
                     ),
                     ActionParam(
-                        name="limit", param_type="integer",
-                        description="Number of processes (default: 10)", required=False,
+                        name="limit",
+                        param_type="integer",
+                        description="Number of processes (default: 10)",
+                        required=False,
                     ),
                 ],
             ),
@@ -126,7 +137,8 @@ class MonitorWorker(BaseWorker):
                 ),
                 params=[
                     ActionParam(
-                        name="name", param_type="string",
+                        name="name",
+                        param_type="string",
                         description="Service/process name (e.g., nginx, mysql, redis)",
                     ),
                 ],
@@ -171,7 +183,8 @@ class MonitorWorker(BaseWorker):
     # snapshot
     # ------------------------------------------------------------------
     async def _snapshot(
-        self, args: dict[str, ArgValue],
+        self,
+        args: dict[str, ArgValue],
     ) -> WorkerResult:
         include_raw = args.get("include")
         include: Union[list[str], None] = None
@@ -184,28 +197,32 @@ class MonitorWorker(BaseWorker):
         if include is None or "cpu" in include:
             cpu_pct = await asyncio.to_thread(psutil.cpu_percent, interval=1)
             status = self._judge(cpu_pct, "cpu")
-            metrics.append(MonitorMetric(
-                name="cpu_usage",
-                value=cpu_pct,
-                unit="percent",
-                status=status,
-                message=f"CPU 使用率 {cpu_pct:.1f}%",
-            ))
+            metrics.append(
+                MonitorMetric(
+                    name="cpu_usage",
+                    value=cpu_pct,
+                    unit="percent",
+                    status=status,
+                    message=f"CPU 使用率 {cpu_pct:.1f}%",
+                )
+            )
 
         # Memory
         if include is None or "memory" in include:
             mem = psutil.virtual_memory()
             mem_pct = mem.percent
             status = self._judge(mem_pct, "memory")
-            used_gb = mem.used / (1024 ** 3)
-            total_gb = mem.total / (1024 ** 3)
-            metrics.append(MonitorMetric(
-                name="memory_usage",
-                value=mem_pct,
-                unit="percent",
-                status=status,
-                message=f"内存 {used_gb:.1f}GB / {total_gb:.1f}GB ({mem_pct:.1f}%)",
-            ))
+            used_gb = mem.used / (1024**3)
+            total_gb = mem.total / (1024**3)
+            metrics.append(
+                MonitorMetric(
+                    name="memory_usage",
+                    value=mem_pct,
+                    unit="percent",
+                    status=status,
+                    message=f"内存 {used_gb:.1f}GB / {total_gb:.1f}GB ({mem_pct:.1f}%)",
+                )
+            )
 
         # Disk
         if include is None or "disk" in include:
@@ -216,18 +233,20 @@ class MonitorWorker(BaseWorker):
                     continue
                 pct = usage.percent
                 status = self._judge(pct, "disk")
-                used_gb = usage.used / (1024 ** 3)
-                total_gb = usage.total / (1024 ** 3)
-                metrics.append(MonitorMetric(
-                    name=f"disk_{part.mountpoint}",
-                    value=pct,
-                    unit="percent",
-                    status=status,
-                    message=(
-                        f"磁盘 {part.mountpoint}: "
-                        f"{used_gb:.1f}GB / {total_gb:.1f}GB ({pct:.1f}%)"
-                    ),
-                ))
+                used_gb = usage.used / (1024**3)
+                total_gb = usage.total / (1024**3)
+                metrics.append(
+                    MonitorMetric(
+                        name=f"disk_{part.mountpoint}",
+                        value=pct,
+                        unit="percent",
+                        status=status,
+                        message=(
+                            f"磁盘 {part.mountpoint}: "
+                            f"{used_gb:.1f}GB / {total_gb:.1f}GB ({pct:.1f}%)"
+                        ),
+                    )
+                )
 
         # Load average
         if include is None or "load" in include:
@@ -235,13 +254,17 @@ class MonitorWorker(BaseWorker):
             cpu_count = psutil.cpu_count() or 1
             load_ratio = load1 / cpu_count * 100
             status = self._judge(load_ratio, "cpu")
-            metrics.append(MonitorMetric(
-                name="load_average",
-                value=round(load1, 2),
-                unit="load",
-                status=status,
-                message=f"负载 {load1:.2f} / {load5:.2f} / {load15:.2f} (CPU 核数: {cpu_count})",
-            ))
+            metrics.append(
+                MonitorMetric(
+                    name="load_average",
+                    value=round(load1, 2),
+                    unit="load",
+                    status=status,
+                    message=(
+                        f"负载 {load1:.2f} / {load5:.2f} / {load15:.2f} (CPU 核数: {cpu_count})"
+                    ),
+                )
+            )
 
         # 构建结构化 data
         data: list[dict[str, Union[str, int]]] = [
@@ -281,7 +304,8 @@ class MonitorWorker(BaseWorker):
     # check_port
     # ------------------------------------------------------------------
     async def _check_port(
-        self, args: dict[str, ArgValue],
+        self,
+        args: dict[str, ArgValue],
     ) -> WorkerResult:
         port_raw = args.get("port")
         if port_raw is None or not isinstance(port_raw, (str, int)):
@@ -310,8 +334,13 @@ class MonitorWorker(BaseWorker):
             )
             return WorkerResult(
                 success=True,
-                data={"name": f"port_{port}", "value": str(round(elapsed_ms, 2)),
-                      "unit": "ms", "status": "ok", "message": metric.message},
+                data={
+                    "name": f"port_{port}",
+                    "value": str(round(elapsed_ms, 2)),
+                    "unit": "ms",
+                    "status": "ok",
+                    "message": metric.message,
+                },
                 message=metric.message,
                 task_completed=False,  # 让 LLM 决定是否继续诊断
             )
@@ -319,9 +348,13 @@ class MonitorWorker(BaseWorker):
             elapsed_ms = (time.monotonic() - start) * 1000
             return WorkerResult(
                 success=True,
-                data={"name": f"port_{port}", "value": str(round(elapsed_ms, 2)),
-                      "unit": "ms", "status": "critical",
-                      "message": f"端口 {host}:{port} 不可达"},
+                data={
+                    "name": f"port_{port}",
+                    "value": str(round(elapsed_ms, 2)),
+                    "unit": "ms",
+                    "status": "critical",
+                    "message": f"端口 {host}:{port} 不可达",
+                },
                 message=f"端口 {host}:{port} 不可达 (超时 {elapsed_ms:.0f}ms)",
                 task_completed=False,  # 端口不可达是重要信号，LLM 应继续诊断
             )
@@ -330,7 +363,8 @@ class MonitorWorker(BaseWorker):
     # check_http
     # ------------------------------------------------------------------
     async def _check_http(
-        self, args: dict[str, ArgValue],
+        self,
+        args: dict[str, ArgValue],
     ) -> WorkerResult:
         url_raw = args.get("url")
         if url_raw is None:
@@ -352,8 +386,12 @@ class MonitorWorker(BaseWorker):
 
             return WorkerResult(
                 success=True,
-                data={"name": f"http_{url}", "status_code": status_code,
-                      "latency_ms": str(round(elapsed_ms, 2)), "status": status},
+                data={
+                    "name": f"http_{url}",
+                    "status_code": status_code,
+                    "latency_ms": str(round(elapsed_ms, 2)),
+                    "status": status,
+                },
                 message=msg,
                 task_completed=False,  # 让 LLM 决定是否继续诊断
             )
@@ -361,8 +399,12 @@ class MonitorWorker(BaseWorker):
             elapsed_ms = (time.monotonic() - start) * 1000
             return WorkerResult(
                 success=True,
-                data={"name": f"http_{url}", "status_code": 0,
-                      "latency_ms": str(round(elapsed_ms, 2)), "status": "critical"},
+                data={
+                    "name": f"http_{url}",
+                    "status_code": 0,
+                    "latency_ms": str(round(elapsed_ms, 2)),
+                    "status": "critical",
+                },
                 message=f"HTTP {url} 请求失败: {exc} ({elapsed_ms:.0f}ms)",
                 task_completed=False,  # HTTP 失败是重要信号，LLM 应继续诊断
             )
@@ -371,7 +413,8 @@ class MonitorWorker(BaseWorker):
     # check_process
     # ------------------------------------------------------------------
     async def _check_process(
-        self, args: dict[str, ArgValue],
+        self,
+        args: dict[str, ArgValue],
     ) -> WorkerResult:
         name_raw = args.get("name")
         if name_raw is None:
@@ -384,14 +427,16 @@ class MonitorWorker(BaseWorker):
                 info = proc.info
                 pname: str = info.get("name", "") or ""
                 if proc_name in pname.lower():
-                    found.append({
-                        "pid": info.get("pid", 0),
-                        "name": pname,
-                        "cpu_percent": str(info.get("cpu_percent", 0) or 0),
-                        "memory_percent": str(
-                            round(float(info.get("memory_percent", 0) or 0), 2)
-                        ),
-                    })
+                    found.append(
+                        {
+                            "pid": info.get("pid", 0),
+                            "name": pname,
+                            "cpu_percent": str(info.get("cpu_percent", 0) or 0),
+                            "memory_percent": str(
+                                round(float(info.get("memory_percent", 0) or 0), 2)
+                            ),
+                        }
+                    )
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
 
@@ -414,7 +459,8 @@ class MonitorWorker(BaseWorker):
     # top_processes
     # ------------------------------------------------------------------
     async def _top_processes(
-        self, args: dict[str, ArgValue],
+        self,
+        args: dict[str, ArgValue],
     ) -> WorkerResult:
         sort_by_raw = args.get("sort_by", "cpu")
         sort_by = str(sort_by_raw) if sort_by_raw in ("cpu", "memory") else "cpu"
@@ -429,14 +475,14 @@ class MonitorWorker(BaseWorker):
         for proc in psutil.process_iter(attrs):
             try:
                 info = proc.info
-                procs.append({
-                    "pid": info.get("pid", 0),
-                    "name": info.get("name", "") or "",
-                    "cpu_percent": str(info.get("cpu_percent", 0) or 0),
-                    "memory_percent": str(
-                        round(float(info.get("memory_percent", 0) or 0), 2)
-                    ),
-                })
+                procs.append(
+                    {
+                        "pid": info.get("pid", 0),
+                        "name": info.get("name", "") or "",
+                        "cpu_percent": str(info.get("cpu_percent", 0) or 0),
+                        "memory_percent": str(round(float(info.get("memory_percent", 0) or 0), 2)),
+                    }
+                )
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
 
@@ -455,7 +501,8 @@ class MonitorWorker(BaseWorker):
     # find_service_port - 按服务名查找实际监听端口
     # ------------------------------------------------------------------
     async def _find_service_port(
-        self, args: dict[str, ArgValue],
+        self,
+        args: dict[str, ArgValue],
     ) -> WorkerResult:
         """按服务/进程名查找其实际监听的 TCP 端口。
 
@@ -485,12 +532,14 @@ class MonitorWorker(BaseWorker):
                 for conn in connections:
                     if conn.status == "LISTEN" and conn.laddr:
                         addr = conn.laddr
-                        found.append({
-                            "pid": pid,
-                            "process_name": info.get("name", "") or "",
-                            "listen_address": str(addr.ip),
-                            "listen_port": addr.port,
-                        })
+                        found.append(
+                            {
+                                "pid": pid,
+                                "process_name": info.get("name", "") or "",
+                                "listen_address": str(addr.ip),
+                                "listen_port": addr.port,
+                            }
+                        )
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
 

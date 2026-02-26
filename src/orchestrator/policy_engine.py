@@ -100,9 +100,9 @@ class PolicyEngine:
             command = instruction.args.get("command", "")
             if isinstance(command, str) and command:
                 cmd_result = PolicyEngine.check_command(command)
-                risk = cmd_result.risk_level or "medium"
+                cmd_risk = cmd_result.risk_level or "medium"
                 return PolicyResult(
-                    risk_level=risk,
+                    risk_level=cmd_risk,
                     allowed=cmd_result.allowed is not False,
                     reason=cmd_result.reason,
                 )

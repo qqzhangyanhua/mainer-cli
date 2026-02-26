@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
-
 from src.orchestrator.risk_analyzer import (
     AnalysisTrace,
-    analyze_command_risk,
     _layer1_category_baseline,
     _layer2_semantic_analysis,
     _layer3_flag_detection,
     _layer4_pipe_analysis,
+    analyze_command_risk,
 )
 
 

@@ -77,24 +77,30 @@ README:
 
 **安全的命令生成方式：**
 - ✅ 使用 `openssl rand -hex 32` 生成随机值（不要用 Python！）
-- ✅ 使用 `echo VAR=$(command)` 的形式（$(...)在 echo 中是安全的）
+- ✅ 使用 `echo VAR=$(command)` 的形式
+  （$(...)在 echo 中是安全的）
 - ✅ 每行一个独立命令，不要用 && 连接
-- ✅ 使用白名单命令：git、docker、docker compose、docker-compose、mkdir、test、cat、ls、echo、openssl
+- ✅ 使用白名单命令：git、docker、docker compose、docker-compose、mkdir、test、cat、ls、
+  echo、openssl
 
 **示例：**
 - ❌ 错误：`python -c 'import secrets; print(secrets.token_hex(32))'` （包含分号）
 - ✅ 正确：`openssl rand -hex 32`
-- ❌ 错误：`docker build -t app . && docker run -d app` （包含 &&）
-- ✅ 正确：分为两步，先 `docker build -t app .`，再 `docker run -d app`
+- ❌ 错误：`docker build -t app . && docker run -d app`
+  （包含 &&）
+- ✅ 正确：分为两步，先 `docker build -t app .`，再
+  `docker run -d app`
 
 **环境变量生成：**
 - 对于 SECRET_KEY：使用 `echo SECRET_KEY=$(openssl rand -hex 32) > .env`
 - 对于其他变量：使用 `echo VAR_NAME=value >> .env`
 
 **其他规则：**
-- 若 Docker daemon 未运行：macOS 可使用 `open -a Docker` 启动 Docker Desktop
+- 若 Docker daemon 未运行：macOS 可使用 `open -a Docker`
+  启动 Docker Desktop
 - 启动后必须加一步 `docker info` 检查是否就绪
-- 端口映射必须从 Dockerfile 的 EXPOSE 指令或 docker-compose.yml 中读取
+- 端口映射必须从 Dockerfile 的 EXPOSE 指令或 docker-compose.yml
+  中读取
 - 所有命令都将在项目目录中执行
 
 返回 JSON（不要包含 markdown 代码块标记）:
@@ -117,10 +123,16 @@ README:
   "steps": [
     {{"description": "启动 Docker Desktop", "command": "open -a Docker", "risk_level": "medium"}},
     {{"description": "检查 Docker 是否就绪", "command": "docker info", "risk_level": "safe"}},
-    {{"description": "创建 .env 文件（SECRET_KEY）", "command": "echo SECRET_KEY=$(openssl rand -hex 32) > .env", "risk_level": "safe"}},
-    {{"description": "添加 LOGIN_PASSWORD", "command": "echo LOGIN_PASSWORD=$(openssl rand -base64 12) >> .env", "risk_level": "safe"}},
+    {{"description": "创建 .env 文件（SECRET_KEY）",
+     "command": "echo SECRET_KEY=$(openssl rand -hex 32) > .env",
+     "risk_level": "safe"}},
+    {{"description": "添加 LOGIN_PASSWORD",
+     "command": "echo LOGIN_PASSWORD=$(openssl rand -base64 12) >> .env",
+     "risk_level": "safe"}},
     {{"description": "构建镜像", "command": "docker build -t myapp .", "risk_level": "safe"}},
-    {{"description": "运行容器", "command": "docker run -d --name myapp -p 5000:5000 --env-file .env myapp", "risk_level": "safe"}}
+    {{"description": "运行容器",
+     "command": "docker run -d --name myapp -p 5000:5000 --env-file .env myapp",
+     "risk_level": "safe"}}
   ],
   "notes": "自动生成了 SECRET_KEY 和 LOGIN_PASSWORD（随机密码）"
 }}

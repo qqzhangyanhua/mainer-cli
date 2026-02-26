@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from collections.abc import Sequence
+from typing import Optional, Union, cast
 
-from src.types import ConversationEntry, Instruction, WorkerResult
+from typing_extensions import TypeAlias
+
+from src.types import ConversationEntry, Instruction, RiskLevel, WorkerResult
+
+WorkerResultData: TypeAlias = Union[
+    list[dict[str, Union[str, int]]],
+    dict[str, Union[str, int, bool]],
+    None,
+]
 
 
 def build_graph_messages(
@@ -36,15 +45,12 @@ def build_graph_messages(
     return messages
 
 
-def parse_graph_messages(messages: list[object]) -> list[ConversationEntry]:
+def parse_graph_messages(messages: Sequence[object]) -> list[ConversationEntry]:
     """从 LangGraph 消息历史解析 ConversationEntry"""
     history: list[ConversationEntry] = []
 
     def _message_role(message: object) -> Optional[str]:
-        if isinstance(message, dict):
-            role = message.get("role")
-        else:
-            role = getattr(message, "type", None)
+        role = message.get("role") if isinstance(message, dict) else getattr(message, "type", None)
         if role == "ai":
             return "assistant"
         if role == "human":
@@ -68,16 +74,30 @@ def parse_graph_messages(messages: list[object]) -> list[ConversationEntry]:
             inst_dict = _message_get(msg1, "instruction")
             res_dict = _message_get(msg2, "result")
             if isinstance(inst_dict, dict) and isinstance(res_dict, dict):
+                args = inst_dict.get("args", {})
+                if not isinstance(args, dict):
+                    args = {}
+                risk_level_raw = inst_dict.get("risk_level", "safe")
+                risk_level: RiskLevel = (
+                    risk_level_raw if risk_level_raw in {"safe", "medium", "high"} else "safe"
+                )
+                data_value = res_dict.get("data")
+                if isinstance(data_value, (dict, list)):
+                    data = cast(WorkerResultData, data_value)
+                else:
+                    data = None
+                user_input_raw = _message_get(msg1, "user_input")
+                user_input = user_input_raw if isinstance(user_input_raw, str) else None
                 instruction = Instruction(
                     worker=str(inst_dict.get("worker", "")),
                     action=str(inst_dict.get("action", "")),
-                    args=inst_dict.get("args", {}),  # type: ignore[arg-type]
-                    risk_level=inst_dict.get("risk_level", "safe"),  # type: ignore[arg-type]
+                    args=args,
+                    risk_level=risk_level,
                     dry_run=bool(inst_dict.get("dry_run", False)),
                 )
                 result = WorkerResult(
                     success=bool(res_dict.get("success", False)),
-                    data=res_dict.get("data"),  # type: ignore[arg-type]
+                    data=data,
                     message=str(res_dict.get("message", "")),
                     task_completed=bool(res_dict.get("task_completed", False)),
                     simulated=bool(res_dict.get("simulated", False)),
@@ -86,7 +106,7 @@ def parse_graph_messages(messages: list[object]) -> list[ConversationEntry]:
                     ConversationEntry(
                         instruction=instruction,
                         result=result,
-                        user_input=_message_get(msg1, "user_input"),  # type: ignore[arg-type]
+                        user_input=user_input,
                     )
                 )
 

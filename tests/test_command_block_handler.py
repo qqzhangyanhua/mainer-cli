@@ -76,7 +76,7 @@ class TestCommandBlockHandler:
         error = "Error: container already exists"
 
         # 这是容器名称冲突，应该被正常处理
-        result = diagnoser.try_local_fix(command, error)
+        assert diagnoser.try_local_fix(command, error) is None
         # 由于没有 --name，实际会返回 None，但不应该触发命令拦截处理
         # 这个测试主要确保命令拦截处理不会误判
 

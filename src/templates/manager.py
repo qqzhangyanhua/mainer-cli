@@ -23,16 +23,12 @@ class TemplateStep(BaseModel):
     description: str = Field(default="", description="步骤描述")
 
     # --- Runbook 增强字段（均可选，向后兼容）---
-    output_key: Optional[str] = Field(
-        default=None, description="存储结果的键名，供后续步骤引用"
-    )
+    output_key: Optional[str] = Field(default=None, description="存储结果的键名，供后续步骤引用")
     condition: Optional[str] = Field(
         default=None,
         description="执行条件表达式，如 'step1.success' 或 'step1.success == false'",
     )
-    on_failure: OnFailureAction = Field(
-        default="abort", description="失败时行为: abort/skip/retry"
-    )
+    on_failure: OnFailureAction = Field(default="abort", description="失败时行为: abort/skip/retry")
     retry_count: int = Field(default=0, description="失败重试次数（0=不重试）")
 
 

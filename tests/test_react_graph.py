@@ -6,8 +6,8 @@ import pytest
 
 from src.context.environment import EnvironmentContext
 from src.llm.client import LLMClient
-from src.orchestrator.graph.checkpoint import SQLITE_AVAILABLE
 from src.orchestrator.graph import ReactGraph
+from src.orchestrator.graph.checkpoint import SQLITE_AVAILABLE
 from src.orchestrator.graph.react_nodes import ReactNodes
 from src.workers.audit import AuditWorker
 from src.workers.base import BaseWorker
@@ -577,7 +577,10 @@ class TestPermissionErrorDetection:
         """正确加 sudo 前缀，不重复"""
         assert ReactNodes._build_sudo_command("nginx -t") == "sudo nginx -t"
         assert ReactNodes._build_sudo_command("sudo nginx -t") == "sudo nginx -t"
-        assert ReactNodes._build_sudo_command("  systemctl restart nginx") == "sudo systemctl restart nginx"
+        assert (
+            ReactNodes._build_sudo_command("  systemctl restart nginx")
+            == "sudo systemctl restart nginx"
+        )
 
     @pytest.mark.asyncio
     async def test_check_node_permission_error_sets_suggested_commands(
@@ -609,9 +612,7 @@ class TestPermissionErrorDetection:
         assert "权限不足" in str(result.get("final_message", ""))
 
     @pytest.mark.asyncio
-    async def test_check_node_non_permission_error_still_recovers(
-        self, nodes: ReactNodes
-    ) -> None:
+    async def test_check_node_non_permission_error_still_recovers(self, nodes: ReactNodes) -> None:
         """非权限错误仍走正常恢复循环"""
         state = {
             "worker_result": {
@@ -697,7 +698,9 @@ class TestLLMIsFinalLogic:
         assert result.get("is_error", False) is False
 
     @pytest.mark.asyncio
-    async def test_llm_is_final_false_cannot_override_worker_completed(self, nodes: ReactNodes) -> None:
+    async def test_llm_is_final_false_cannot_override_worker_completed(
+        self, nodes: ReactNodes
+    ) -> None:
         """llm_is_final=False 不能覆盖 worker 的 task_completed=True"""
         state = {
             "worker_result": {

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 
 @dataclass
@@ -82,11 +81,13 @@ class RunbookLoader:
         steps: list[DiagnosticStep] = []
         for step_data in data.get("steps", []):
             if isinstance(step_data, dict):
-                steps.append(DiagnosticStep(
-                    description=str(step_data.get("description", "")),
-                    command=str(step_data.get("command", "")),
-                    risk=str(step_data.get("risk", "safe")),
-                ))
+                steps.append(
+                    DiagnosticStep(
+                        description=str(step_data.get("description", "")),
+                        command=str(step_data.get("command", "")),
+                        risk=str(step_data.get("risk", "safe")),
+                    )
+                )
 
         return DiagnosticRunbook(
             name=str(data.get("name", path.stem)),
